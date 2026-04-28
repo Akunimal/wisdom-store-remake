@@ -1,16 +1,20 @@
 /**
- * request_compact tool
+ * compact_context tool
  *
- * Requests context compaction for the current session by sending /compact
- * to the tmux session via the dashboard API. The compact executes after
- * the current turn completes.
+ * Triggers Claude Code's /compact command on the current session by sending
+ * /compact to the tmux session via the dashboard API. Compaction executes
+ * after the current turn completes.
+ *
+ * Naming parallels prune_context — both manage conversation context, with
+ * compact_context summarizing+trimming via the LLM and prune_context
+ * dropping oldest messages without summarization.
  *
  * Requires DASHBOARD_URL env var pointing to the claudeLoop dashboard.
  */
 
 import { findConversationFile } from '../lib/jsonl.js';
 
-export async function handleRequestCompact(args) {
+export async function handleCompactContext(args) {
   const dashboardUrl = process.env.DASHBOARD_URL;
   if (!dashboardUrl) {
     return {
