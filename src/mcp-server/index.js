@@ -46,7 +46,7 @@ import { handleGetProjectOverview } from './tools/get-project-overview.js';
 import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
 import { handleBackupPlan } from './tools/backup-plan.js';
-import { handleRequestCompact } from './tools/request-compact.js';
+import { handleCompactContext } from './tools/compact-context.js';
 import { handleAnnotateWisdom } from './tools/annotate-wisdom.js';
 import { handleInspectPrunedMessages } from './tools/inspect-pruned-messages.js';
 import { handleSandwichPrune } from './tools/sandwich-prune.js';
@@ -486,7 +486,7 @@ const TOOLS = [
     }
   },
   {
-    name: 'request_compact',
+    name: 'compact_context',
     description: 'Request context compaction for your session. Sends /compact to your tmux session via the dashboard — it executes after your current turn completes. Use when context is getting large and you want to compact proactively. Save important findings with save_wisdom first, as compaction summarizes and trims conversation history. Requires DASHBOARD_URL env var.',
     inputSchema: {
       type: 'object',
@@ -539,8 +539,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await handleRefreshSymbols(args);
       case 'backup_plan':
         return await handleBackupPlan(args);
-      case 'request_compact':
-        return await handleRequestCompact(args);
+      case 'compact_context':
+        return await handleCompactContext(args);
       case 'annotate_wisdom':
         return await handleAnnotateWisdom(args);
       case 'inspect_pruned_messages':
