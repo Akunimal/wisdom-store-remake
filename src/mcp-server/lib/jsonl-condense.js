@@ -158,6 +158,18 @@ function refetchMarker({ toolName, toolArgs, contentText, contentLen, pass1TurnS
   return summaryParts.join('\n');
 }
 
+// Sidecar-aware check: is this block already condensed per the sidecar metadata?
+// When opts.sidecar is provided, skip blocks already recorded as condensed by
+// any prior run — keeps condense IDEMPOTENT at the block level.
+function isAlreadyCondensed(sidecar, uuid, blockIdx) {
+  if (!sidecar?.entries) return false;
+  return !!sidecar.entries[uuid]?.blocks?.[String(blockIdx)];
+}
+
+function recordCondense(records, uuid, blockIdx, mode, originalBytes, condensedBytes, extra) {
+  records.push([uuid, { blockIdx, mode, originalBytes, condensedBytes, extra }]);
+}
+
 function imageMarker(originalLength, filePath) {
   const sizeKb = (originalLength / 1024).toFixed(0);
   return `[image elided: ~${sizeKb} KB base64, was Read of ${filePath || '<unknown path>'}]`;
@@ -256,6 +268,7 @@ function thinkingMarker({ originalLength, source, summary, style = 'minimal' }) 
  */
 export function buildCondensePlan(chainFullEntries, opts = {}) {
   const modes = new Set(opts.modes || ['images', 'memory-reads', 'identical-reads']);
+  const sidecar = opts.sidecar || null;  // when provided, skip already-condensed blocks
   const replace = new Map();
   const stats = {
     imagesCondensed: 0,
@@ -273,7 +286,8 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
     mcpSnapshotsBytesSaved: 0,
     refetchMarkersCondensed: 0,
     refetchMarkersBytesSaved: 0,
-    totalEntriesScanned: chainFullEntries.length
+    totalEntriesScanned: chainFullEntries.length,
+    _blockCondenseRecords: []  // records for sidecar persistence; not meant for user display
   };
 
   // First pass: collect all tool_use → tool_result pairings. For each, capture
@@ -362,6 +376,7 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
         const r = group[k];
         if (r.content === latest.content && r.contentLen > 1024) {
           // Schedule replacement for r's tool_result block
+          if (isAlreadyCondensed(sidecar, r.resultUuid, r.resultBlockIdx)) continue;
           enqueueBlockReplace(replace, chainFullEntries, r, staleReadMarker({
             filePath: fp,
             originalLength: r.contentLen,
@@ -370,6 +385,7 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
           }), 'identical-reads');
           stats.identicalReadsCondensed++;
           stats.identicalReadsBytesSaved += r.contentLen;
+          recordCondense(stats._blockCondenseRecords, r.resultUuid, r.resultBlockIdx, 'identical-reads', r.contentLen, 0, { fp });
         }
       }
     }
@@ -392,6 +408,7 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
         // Skip if already scheduled by identical-reads
         if (replace.has(r.resultUuid) && replace.get(r.resultUuid)._condenseSource === 'identical-reads') continue;
         if (r.contentLen < 256) continue; // not worth marking trivial reads
+        if (isAlreadyCondensed(sidecar, r.resultUuid, r.resultBlockIdx)) continue;
         enqueueBlockReplace(replace, chainFullEntries, r, staleReadMarker({
           filePath: fp,
           originalLength: r.contentLen,
@@ -400,6 +417,7 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
         }), 'memory-reads');
         stats.memoryReadsCondensed++;
         stats.memoryReadsBytesSaved += r.contentLen;
+        recordCondense(stats._blockCondenseRecords, r.resultUuid, r.resultBlockIdx, 'memory-reads', r.contentLen, 0, { fp });
       }
     }
   }
@@ -414,10 +432,12 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
       const isDataUriImage = looksLikeImageBase64(r.content, { file_path: r.fp });
       if (!isStructuredImage && !isDataUriImage) continue;
       if (replace.has(r.resultUuid)) continue;
+      if (isAlreadyCondensed(sidecar, r.resultUuid, r.resultBlockIdx)) continue;
       const totalBytes = r.imageBase64Length + r.contentLen;
       enqueueImageBlockReplace(replace, chainFullEntries, r, imageMarker(totalBytes, r.fp));
       stats.imagesCondensed++;
       stats.imagesBytesSaved += totalBytes;
+      recordCondense(stats._blockCondenseRecords, r.resultUuid, r.resultBlockIdx, 'images', totalBytes, 0, { fp: r.fp });
     }
   }
 
@@ -649,6 +669,30 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
             break;
           }
         }
+      }
+    }
+  }
+
+  // Final pass: record sidecar entries for any block we modified that wasn\'t
+  // already recorded via mode-specific recordCondense calls. Walks the replace
+  // map and emits records based on the _condenseSource tag set by each mode.
+  const recordedUuids = new Set(stats._blockCondenseRecords.map(([u, info]) => u + '|' + info.blockIdx));
+  for (const [uuid, modifiedEntry] of replace) {
+    if (recordedUuids.has(uuid + '|0') && modifiedEntry?.message?.content?.length === 1) continue; // simple case already recorded
+    const c = modifiedEntry?.message?.content;
+    if (!Array.isArray(c)) continue;
+    // Find blocks that look condensed (text marker, single text block in tool_result, etc.)
+    for (let bIdx = 0; bIdx < c.length; bIdx++) {
+      const b = c[bIdx];
+      // Heuristic: a block is "condensed" if it's a tool_result/text whose content
+      // looks like our marker (starts with '[' and contains 'elided').
+      if (recordedUuids.has(uuid + '|' + bIdx)) continue;
+      let markerText = null;
+      if (b?.type === 'text' && typeof b.text === 'string' && b.text.startsWith('[')) markerText = b.text;
+      else if (b?.type === 'tool_result' && typeof b.content === 'string' && b.content.startsWith('[')) markerText = b.content;
+      if (markerText && markerText.includes('elided')) {
+        const mode = modifiedEntry._condenseSource || 'unknown';
+        recordCondense(stats._blockCondenseRecords, uuid, bIdx, mode, 0, markerText.length, {});
       }
     }
   }

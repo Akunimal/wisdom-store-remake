@@ -31,6 +31,7 @@ import {
 import { rewriteJsonl } from '../lib/jsonl-mutate.js';
 import { buildCondensePlan, findMatchingV2Plan } from '../lib/jsonl-condense.js';
 import { segmentTurns } from '../lib/turn-segmenter.js';
+import { loadCondenseMeta, saveCondenseMeta, markBlockCondensed, summarizeMeta } from '../lib/condense-meta.js';
 
 const VALID_MODES = new Set(['images', 'memory-reads', 'identical-reads', 'thinking', 'stale-reads', 'mcp-snapshots', 'refetch-markers']);
 const BACKUP_RETENTION = 3;
@@ -100,7 +101,8 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     extraOpts = { plan: planUsed, turnsByEntryUuid, totalTurns: turns.length, thinkingMarkerStyle: args.thinking_marker_style || 'minimal' };
   }
 
-  const { replace, stats } = buildCondensePlan(chainFullEntries, { modes, ...extraOpts });
+  const sidecar = loadCondenseMeta(filePath);
+  const { replace, stats } = buildCondensePlan(chainFullEntries, { modes, ...extraOpts, sidecar });
   const totalCondensed = stats.imagesCondensed + stats.memoryReadsCondensed + stats.identicalReadsCondensed + (stats.thinkingCondensed || 0) + (stats.staleReadsCondensed || 0) + (stats.mcpSnapshotsCondensed || 0) + (stats.refetchMarkersCondensed || 0);
   const totalBytesSaved = stats.imagesBytesSaved + stats.memoryReadsBytesSaved + stats.identicalReadsBytesSaved + (stats.thinkingBytesSaved || 0) + (stats.staleReadsBytesSaved || 0) + (stats.mcpSnapshotsBytesSaved || 0) + (stats.refetchMarkersBytesSaved || 0);
 
@@ -143,6 +145,17 @@ export async function handleCondenseJsonlBlocks(args = {}) {
   fs.copyFileSync(filePath, backupPath);
   const prunedBackups = pruneOldBackups(backupDir, convId);
 
+  // Update sidecar metadata for every block we just condensed (this is the
+  // record that future runs use to skip already-touched blocks).
+  for (const [uuid, info] of (stats._blockCondenseRecords || [])) {
+    markBlockCondensed(sidecar, uuid, info.blockIdx, {
+      mode: info.mode,
+      originalBytes: info.originalBytes,
+      condensedBytes: info.condensedBytes,
+      extra: info.extra
+    });
+  }
+
   // Apply via shared rewriteJsonl utility.
   let stats2;
   try {
@@ -154,6 +167,10 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     };
   }
 
+  // Persist the sidecar (after rewriteJsonl succeeds — keeps meta and JSONL in sync).
+  let sidecarPath = null;
+  try { sidecarPath = saveCondenseMeta(filePath, sidecar); } catch (e) { sidecarPath = `(save failed: ${e.message})`; }
+
   const sizeAfter = fs.statSync(filePath).size;
   const fileBytesDelta = sizeBefore - sizeAfter;
   const reductionPct = sizeBefore > 0 ? Math.round((100 * fileBytesDelta) / sizeBefore) : 0;
@@ -163,6 +180,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     prunedBackups.length ? `**Pruned old backups**: ${prunedBackups.length}` : '',
     `**File size**: ${(sizeBefore/1024).toFixed(0)} KB → ${(sizeAfter/1024).toFixed(0)} KB (${reductionPct}% smaller)`,
     `**Replaced entries**: ${stats2.replacedActual}`,
+    sidecarPath ? `**Sidecar metadata**: \`${sidecarPath}\` — tracks per-block condense status; future runs skip already-condensed blocks` : '',
     ``,
     `Hot-trim: Claude Code re-walks the chain each turn — condensed content is visible immediately without /resume. uuid + parentUuid preserved on every entry.`,
     `To undo: \`restore_archive_backup({ backupPath: "${backupPath}" })\`.`
