@@ -245,7 +245,7 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
             originalLength: r.contentLen,
             supersededByEntry: latest.resultUuid,
             reason: 'byte-identical to a later read'
-          }));
+          }), 'identical-reads');
           stats.identicalReadsCondensed++;
           stats.identicalReadsBytesSaved += r.contentLen;
         }
@@ -358,15 +358,12 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
         modified = true;
         stats.thinkingCondensed++;
         stats.thinkingBytesSaved += totalLen;
-        return {
-          type: 'text',
-          text: marker,
-          _condensed: true,
-          _condenseSource: 'thinking-' + source,
-          _originalLength: totalLen,
-          _originalType: 'thinking',
-          _signatureElided: sigLen > 0
-        };
+        // CRITICAL: only `type` + `text` (+ optional `cache_control`) are valid
+        // on a text content block per Anthropic API schema. Extra fields cause
+        // `400 Extra inputs are not permitted` when Claude Code sends the
+        // conversation back to the API. All metadata goes on the entry top-level
+        // (handled below), not on the block.
+        return { type: 'text', text: marker };
       });
 
       if (modified) {
@@ -396,15 +393,10 @@ function enqueueImageBlockReplace(replace, chainFullEntries, readSpec, markerTex
   const target = chainFullEntries[readSpec.resultEntryIdx].fullEntry;
   const newContent = target.message.content.map((block, idx) => {
     if (idx !== readSpec.resultBlockIdx) return block;
-    // The tool_result block itself: replace its inner content array with a single text block.
-    const newInner = [{ type: 'text', text: markerText }];
-    return {
-      ...block,
-      content: newInner,
-      _condensed: true,
-      _condenseSource: 'images',
-      _originalImageLength: readSpec.imageBase64Length
-    };
+    // The tool_result block itself: replace its inner content array with a single
+    // text block. Strip API-incompatible metadata (only API-valid keys may live
+    // on content blocks; metadata moves to entry top-level below).
+    return { ...block, content: [{ type: 'text', text: markerText }] };
   });
   const next = {
     ...target,
@@ -420,7 +412,9 @@ function enqueueBlockReplace(replace, chainFullEntries, readSpec, markerText, so
   // Deep-ish clone — only the message.content array's matching block needs change.
   const newContent = target.message.content.map((block, idx) => {
     if (idx !== readSpec.resultBlockIdx) return block;
-    return { ...block, content: markerText, _condensed: true, _condenseSource: sourceTag, _originalLength: readSpec.contentLen };
+    // Strip metadata from content block (API-incompatible). Replace tool_result
+    // content (string form) with the marker text directly.
+    return { ...block, content: markerText };
   });
   const next = {
     ...target,
