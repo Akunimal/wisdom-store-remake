@@ -49,7 +49,7 @@ const PER_ENTRY_MAX_CHARS = 2500;
 // the real tokenizer counts ~1.20x higher. Apply that fudge factor when checking
 // against model windows so we don't 400-too-large at submission time.
 const TOKEN_ESTIMATE_FUDGE = 1.25;
-const PLAN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const PLAN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours — 1h was too short for real deliberation sessions
 
 function archiveDirsFor(jsonlPath) {
   const dir = path.dirname(jsonlPath);
