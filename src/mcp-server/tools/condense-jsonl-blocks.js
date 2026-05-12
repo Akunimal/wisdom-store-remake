@@ -32,7 +32,7 @@ import { rewriteJsonl } from '../lib/jsonl-mutate.js';
 import { buildCondensePlan, findMatchingV2Plan } from '../lib/jsonl-condense.js';
 import { segmentTurns } from '../lib/turn-segmenter.js';
 
-const VALID_MODES = new Set(['images', 'memory-reads', 'identical-reads', 'thinking', 'stale-reads', 'mcp-snapshots']);
+const VALID_MODES = new Set(['images', 'memory-reads', 'identical-reads', 'thinking', 'stale-reads', 'mcp-snapshots', 'refetch-markers']);
 const BACKUP_RETENTION = 3;
 
 function pruneOldBackups(backupDir, convId) {
@@ -86,7 +86,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
   let extraOpts = {};
   let planUsed = null;
   let usingThinkingFallback = false;
-  if (modes.includes('thinking')) {
+  if (modes.includes('thinking') || modes.includes('refetch-markers')) {
     const turns = segmentTurns(chain, readJsonlLine, filePath);
     const turnsByEntryUuid = new Map();
     for (const t of turns) {
@@ -101,8 +101,8 @@ export async function handleCondenseJsonlBlocks(args = {}) {
   }
 
   const { replace, stats } = buildCondensePlan(chainFullEntries, { modes, ...extraOpts });
-  const totalCondensed = stats.imagesCondensed + stats.memoryReadsCondensed + stats.identicalReadsCondensed + (stats.thinkingCondensed || 0) + (stats.staleReadsCondensed || 0) + (stats.mcpSnapshotsCondensed || 0);
-  const totalBytesSaved = stats.imagesBytesSaved + stats.memoryReadsBytesSaved + stats.identicalReadsBytesSaved + (stats.thinkingBytesSaved || 0) + (stats.staleReadsBytesSaved || 0) + (stats.mcpSnapshotsBytesSaved || 0);
+  const totalCondensed = stats.imagesCondensed + stats.memoryReadsCondensed + stats.identicalReadsCondensed + (stats.thinkingCondensed || 0) + (stats.staleReadsCondensed || 0) + (stats.mcpSnapshotsCondensed || 0) + (stats.refetchMarkersCondensed || 0);
+  const totalBytesSaved = stats.imagesBytesSaved + stats.memoryReadsBytesSaved + stats.identicalReadsBytesSaved + (stats.thinkingBytesSaved || 0) + (stats.staleReadsBytesSaved || 0) + (stats.mcpSnapshotsBytesSaved || 0) + (stats.refetchMarkersBytesSaved || 0);
 
   if (totalCondensed === 0) {
     return {
@@ -123,6 +123,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     `- Identical-content reads: ${stats.identicalReadsCondensed} blocks, ~${(stats.identicalReadsBytesSaved/1024).toFixed(0)} KB`,
     `- Stale reads (same path/args, older superseded): ${stats.staleReadsCondensed || 0} blocks, ~${((stats.staleReadsBytesSaved||0)/1024).toFixed(0)} KB`,
     `- MCP status snapshots (older superseded): ${stats.mcpSnapshotsCondensed || 0} blocks, ~${((stats.mcpSnapshotsBytesSaved||0)/1024).toFixed(0)} KB`,
+    `- Re-fetch markers (Read/Bash/MCP queries → summary+pointer): ${stats.refetchMarkersCondensed || 0} blocks, ~${((stats.refetchMarkersBytesSaved||0)/1024).toFixed(0)} KB`,
     modes.includes('thinking') ? `- Thinking blocks: ${stats.thinkingCondensed || 0} blocks, ~${((stats.thinkingBytesSaved||0)/1024).toFixed(0)} KB${usingThinkingFallback ? ' ⚠️ (heuristic last-paragraph fallback — no v2 plan found)' : ` (using v2 plan ${planUsed?.planId?.slice(0,8) || ''}...)`}` : '',
     `- **Total**: ${totalCondensed} blocks, ~${(totalBytesSaved/1024).toFixed(0)} KB raw content (file size will drop less due to JSON overhead)`,
     ``

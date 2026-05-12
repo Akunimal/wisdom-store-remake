@@ -49,6 +49,37 @@ const MCP_SNAPSHOT_TOOL_PATTERNS = [
 const MCP_SNAPSHOT_MIN_BYTES = 500;  // don't bother for trivial snapshots
 const STALE_READ_MIN_BYTES = 500;    // don't bother for tiny reads
 
+// Re-fetch marker mode: summarize tool_result content with head + tail + re-fetch pointer.
+// Threshold: only condense tool_results above this size — not worth the marker overhead otherwise.
+const REFETCH_MIN_BYTES = 1500;
+const REFETCH_HEAD_CHARS = 400;
+const REFETCH_TAIL_CHARS = 100;
+
+// Tools whose results are SAFELY re-runnable (read-only, idempotent).
+// Tool_results from mutation tools are excluded — re-running is unsafe.
+const REFETCH_ELIGIBLE_TOOLS = new Set([
+  'Read', 'Bash', 'Grep', 'Glob', 'WebFetch', 'WebSearch',
+  'mcp__orchestrator__get_suggestions',
+  'mcp__orchestrator__get_session_info',
+  'mcp__orchestrator__get_session_output',
+  'mcp__orchestrator__list_sessions',
+  'mcp__orchestrator__list_workers',
+  'mcp__orchestrator__get_orchestrators',
+  'mcp__worker__get_my_tasks',
+  'mcp__worker__who_am_i',
+  'mcp__worker__list_file_locks',
+  'mcp__wisdom-store__get_wisdom',
+  'mcp__wisdom-store__list_wisdom',
+  'mcp__wisdom-store__get_project_overview',
+  'mcp__wisdom-store__context_status'
+]);
+// Bash needs special caveat — re-running is technically possible but commands
+// can be side-effecting. Marker includes a "don't re-run unless you've checked
+// the command is safe" warning rather than a clean re-run pointer.
+const REFETCH_BASH_CAVEAT_TOOLS = new Set(['Bash']);
+// Keep refetch-eligible tool_results verbatim for the most-recent N turns (active state).
+const REFETCH_KEEP_RECENT_TURNS = 30;
+
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/i;
 
 /**
@@ -80,6 +111,51 @@ function isMcpSnapshotTool(toolName) {
 function isMemoryStylePath(fp) {
   if (!fp || typeof fp !== 'string') return false;
   return MEMORY_FILE_PATTERNS.some(re => re.test(fp));
+}
+
+function refetchMarker({ toolName, toolArgs, contentText, contentLen, pass1TurnSummary }) {
+  const head = contentText.slice(0, REFETCH_HEAD_CHARS);
+  const tail = contentLen > (REFETCH_HEAD_CHARS + REFETCH_TAIL_CHARS + 100)
+    ? contentText.slice(-REFETCH_TAIL_CHARS)
+    : '';
+  const lineCount = contentText.split('\n').length;
+  const elidedLen = contentLen - head.length - tail.length;
+
+  // Re-fetch pointer based on tool type
+  let refetchInstr;
+  if (toolName === 'Read' && toolArgs?.file_path) {
+    refetchInstr = `Read({file_path: ${JSON.stringify(toolArgs.file_path)}${toolArgs.offset ? `, offset: ${toolArgs.offset}` : ''}${toolArgs.limit ? `, limit: ${toolArgs.limit}` : ''}}) — gives current file state, not the historical snapshot`;
+  } else if (toolName === 'Bash' && toolArgs?.command) {
+    refetchInstr = `Bash({command: ${JSON.stringify(toolArgs.command)}}) — RE-RUN ONLY IF SAFE; some commands have side effects.`;
+  } else if (toolName === 'Grep' && toolArgs?.pattern) {
+    refetchInstr = `Grep with same args (pattern + path filters) for current matches`;
+  } else if (toolName?.startsWith('mcp__')) {
+    refetchInstr = `${toolName}(${JSON.stringify(toolArgs || {})}) — re-call for current state`;
+  } else {
+    refetchInstr = `re-call ${toolName} with the same args`;
+  }
+
+  const summaryParts = [
+    `[${toolName} tool_result elided — ~${(contentLen/1024).toFixed(1)} KB, ${lineCount} lines]`
+  ];
+  // Optional Pass 1 turn summary — higher quality context than raw head/tail.
+  if (pass1TurnSummary) {
+    summaryParts.push(``, `TURN OUTCOME (from analyze v2 Pass 1):`, `  ${pass1TurnSummary}`);
+  }
+  // Always include head+tail as procedural backup — Pass 1 summary captures the
+  // turn's overall outcome but the raw content head shows the actual data shape.
+  summaryParts.push(``, `RAW CONTENT (first ${head.length} chars):`, head);
+  if (tail) {
+    summaryParts.push(``, `... [${elidedLen} chars elided] ...`, ``, `(last ${tail.length} chars):`, tail);
+  }
+  summaryParts.push(
+    ``,
+    `RE-FETCH for full current content:`,
+    `  ${refetchInstr}`,
+    ``,
+    `Why elided: tool_result was older than the most-recent ${REFETCH_KEEP_RECENT_TURNS}-turn active state and ≥${REFETCH_MIN_BYTES} bytes; condensed to summary+pointer. Original preserved in .condense-backups/.`
+  );
+  return summaryParts.join('\n');
 }
 
 function imageMarker(originalLength, filePath) {
@@ -195,6 +271,8 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
     staleReadsBytesSaved: 0,
     mcpSnapshotsCondensed: 0,
     mcpSnapshotsBytesSaved: 0,
+    refetchMarkersCondensed: 0,
+    refetchMarkersBytesSaved: 0,
     totalEntriesScanned: chainFullEntries.length
   };
 
@@ -494,6 +572,83 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
         if (existing) next._condenseSource = (baseTarget._condenseSource || '') + '+thinking';
         else next._condenseSource = 'thinking';
         replace.set(entry.uuid, next);
+      }
+    }
+  }
+
+  // --- Mode: refetch-markers ---
+  // For tool_result blocks of READ-ONLY tools (Read, Bash, MCP queries, etc.),
+  // replace content with a summary (head + tail + line count) and a pointer to
+  // re-fetch the full content. Skip the most-recent N turns (active state).
+  // Skip tool_use INPUTS (those represent agent's record of past actions).
+  if (modes.has('refetch-markers')) {
+    const turnsByEntryUuid = opts.turnsByEntryUuid || new Map();
+    const totalTurns = opts.totalTurns || 0;
+    const recentBoundary = totalTurns - REFETCH_KEEP_RECENT_TURNS;
+
+    // Re-pair tool_use → tool_result (similar to other modes)
+    for (let i = 0; i < chainFullEntries.length; i++) {
+      const entry = chainFullEntries[i].fullEntry;
+      const c = entry?.message?.content;
+      if (!Array.isArray(c)) continue;
+
+      const turnInfo = turnsByEntryUuid.get(chainFullEntries[i].uuid);
+      const turn_id = turnInfo?.turn_id;
+      if (turn_id != null && totalTurns > 0 && turn_id > recentBoundary) continue;
+
+      // Find tool_use blocks in this entry; look ahead for matching tool_results
+      for (const block of c) {
+        if (block?.type !== 'tool_use') continue;
+        if (!REFETCH_ELIGIBLE_TOOLS.has(block.name)) continue;
+        const tuId = block.id;
+
+        for (let j = i + 1; j < Math.min(i + 5, chainFullEntries.length); j++) {
+          const next = chainFullEntries[j].fullEntry;
+          const nc = next?.message?.content;
+          if (!Array.isArray(nc)) continue;
+          for (let bIdx = 0; bIdx < nc.length; bIdx++) {
+            const nb = nc[bIdx];
+            if (nb?.type !== 'tool_result' || nb.tool_use_id !== tuId) continue;
+
+            // Get text content
+            let txt = '';
+            if (typeof nb.content === 'string') txt = nb.content;
+            else if (Array.isArray(nb.content)) for (const cb of nb.content) {
+              if (cb?.type === 'text') txt += cb.text || '';
+            }
+            if (txt.length < REFETCH_MIN_BYTES) continue;
+            const targetUuid = chainFullEntries[j].uuid;
+            if (replace.has(targetUuid)) continue; // already scheduled by another mode
+
+            const pass1TurnSummary = (turn_id != null && opts.plan)
+              ? pass1SummariesByTurn(opts.plan).get(turn_id)
+              : null;
+            const marker = refetchMarker({
+              toolName: block.name,
+              toolArgs: block.input,
+              contentText: txt,
+              contentLen: txt.length,
+              pass1TurnSummary
+            });
+
+            const target = chainFullEntries[j].fullEntry;
+            const newContent = target.message.content.map((b, idx) => {
+              if (idx !== bIdx) return b;
+              return { ...b, content: marker };
+            });
+            replace.set(targetUuid, {
+              ...target,
+              message: { ...target.message, content: newContent },
+              _condensed: true,
+              _condenseSource: 'refetch-markers'
+            });
+            if (!stats.refetchMarkersCondensed) stats.refetchMarkersCondensed = 0;
+            if (!stats.refetchMarkersBytesSaved) stats.refetchMarkersBytesSaved = 0;
+            stats.refetchMarkersCondensed++;
+            stats.refetchMarkersBytesSaved += (txt.length - marker.length);
+            break;
+          }
+        }
       }
     }
   }
