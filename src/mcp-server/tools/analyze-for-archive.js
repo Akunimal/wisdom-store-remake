@@ -36,9 +36,19 @@ import { getAnthropicClient, formatCost } from '../lib/anthropic-client.js';
 
 const SONNET_MODEL = 'claude-sonnet-4-6';
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
-const TOOL_OUTPUT_HEAD = 600;
-const TOOL_OUTPUT_TAIL = 200;
-const PER_ENTRY_MAX_CHARS = 4000;
+const VALID_PLAN_MODELS = new Set([SONNET_MODEL, HAIKU_MODEL]);
+// Default to Haiku for the planning pass — cheaper (~4x) AND uses a separate
+// rate-limit budget, so analyze stays runnable when Sonnet is throttled. Pass
+// `model: 'claude-sonnet-4-6'` for higher-judgment runs (e.g., when Haiku's
+// distillations are observably weaker on a given conversation type).
+const DEFAULT_PLAN_MODEL = HAIKU_MODEL;
+const TOOL_OUTPUT_HEAD = 400;
+const TOOL_OUTPUT_TAIL = 120;
+const PER_ENTRY_MAX_CHARS = 2500;
+// Empirical 4-chars-per-token estimate is conservative for code-heavy content;
+// the real tokenizer counts ~1.20x higher. Apply that fudge factor when checking
+// against model windows so we don't 400-too-large at submission time.
+const TOKEN_ESTIMATE_FUDGE = 1.25;
 const PLAN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 function archiveDirsFor(jsonlPath) {
@@ -47,6 +57,19 @@ function archiveDirsFor(jsonlPath) {
     plans: path.join(dir, '.archive-plans'),
     backups: path.join(dir, '.archive-backups')
   };
+}
+
+// Strip lone Unicode surrogate code units (high without low or vice versa).
+// JSON.stringify will happily emit \uD8XX without a paired \uDCXX, but the
+// API's JSON parser (server-side) rejects it as "no low surrogate in string"
+// with HTTP 400. Replace with U+FFFD (replacement character) — preserves
+// position for any human readers without breaking the wire format.
+function stripLoneSurrogates(s) {
+  if (typeof s !== 'string' || !s) return s;
+  return s.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    '\uFFFD'
+  );
 }
 
 function clipText(text, maxChars) {
@@ -203,6 +226,13 @@ export async function handleAnalyzeForArchive(args = {}) {
   }
 
   const allowApiKey = args.allowApiKey === true;
+  const planModel = args.model || DEFAULT_PLAN_MODEL;
+  if (!VALID_PLAN_MODELS.has(planModel)) {
+    return {
+      content: [{ type: 'text', text: `Unknown model "${planModel}". Use one of: ${[...VALID_PLAN_MODELS].join(', ')}.` }],
+      isError: true
+    };
+  }
   let clientResult;
   try {
     clientResult = getAnthropicClient({ allowApiKey });
@@ -231,17 +261,24 @@ export async function handleAnalyzeForArchive(args = {}) {
     const full = readJsonlLine(filePath, e.line) || e.data;
     compactLines.push(compactLineForEntry(e, full));
   }
-  const compactBody = compactLines.join('\n\n');
+  const compactBody = stripLoneSurrogates(compactLines.join('\n\n'));
 
   // Approximate input-size guard (4 chars/token rule of thumb).
   const compactBytes = Buffer.byteLength(compactBody);
-  const approxInputTokens = Math.ceil(compactBytes / 4);
-  if (approxInputTokens > 950_000) {
+  const approxInputTokens = Math.ceil((compactBytes / 4) * TOKEN_ESTIMATE_FUDGE);
+  // Pre-check size against the chosen model's window. Haiku 4.5 = 200K standard.
+  // Sonnet 4.6 = 200K standard, 1M with `context-1m-2025-08-07` beta header
+  // (auto-attached for Sonnet calls below). Leave ~8K headroom for system
+  // prompt + output buffer.
+  const MODEL_WINDOW = planModel === SONNET_MODEL ? 1_000_000 : 200_000;
+  const HEADROOM = 8_000;
+  const usableBudget = MODEL_WINDOW - HEADROOM;
+  if (approxInputTokens > usableBudget) {
     return {
       content: [{
         type: 'text',
-        text: `Compact decision-skeleton is ~${approxInputTokens.toLocaleString()} tokens, exceeds the 1M-context budget. ` +
-              `JSONL has ${chain.length} entries; consider running sandwich_prune first to reduce size, then re-running analyze_for_archive on the trimmed file.`
+        text: `Compact decision-skeleton is ~${approxInputTokens.toLocaleString()} tokens, exceeds the ${(usableBudget/1000).toFixed(0)}K usable budget for ${planModel} (${(MODEL_WINDOW/1000).toFixed(0)}K window − ${HEADROOM/1000}K headroom). ` +
+              `JSONL has ${chain.length} entries. Options: (a) sandwich_prune first to reduce size, (b) request a more aggressive clip mode.`
       }],
       isError: true
     };
@@ -273,10 +310,16 @@ export async function handleAnalyzeForArchive(args = {}) {
   const purpose = args.purpose || derivedPurpose || '';
 
   // Main planning call (Sonnet 4.6, 1M context).
+  // For Sonnet, opt into 1M-context beta so inputs >200K don't 400. Anthropic
+  // charges standard tier for ≤200K input, premium tier (~2x) for >200K. We
+  // surface the tier in the cost report.
+  const sonnetExtraHeaders = planModel === SONNET_MODEL
+    ? { headers: { 'anthropic-beta': 'oauth-2025-04-20,context-1m-2025-08-07' } }
+    : undefined;
   let resp;
   try {
     resp = await client.messages.create({
-      model: SONNET_MODEL,
+      model: planModel,
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       tools: [{
@@ -289,14 +332,26 @@ export async function handleAnalyzeForArchive(args = {}) {
         role: 'user',
         content: buildUserPrompt({ purpose, compactBody, jsonlMessages: chain.length })
       }]
-    });
+    }, sonnetExtraHeaders);
   } catch (e) {
     const status = e.status || '';
     const detail = e.error?.error?.message || e.error?.message || e.message || String(e);
     let hint = '';
     if (status === 429) hint = ' Rate-limited against your Claude subscription. Wait a few minutes and retry, or use a smaller conversation. Subscription rate limits apply per-user, not per-tool.';
     else if (status === 401) hint = ' Auth failed — re-authenticate via Claude Code (run /login).';
-    else if (status === 400) hint = ' Bad request — likely the compact skeleton exceeded the 1M token window despite the pre-check. Try sandwich_prune first.';
+    else if (status === 400) {
+      // Distinguish size-related 400 from content-related 400. The server's
+      // error text usually contains "context" / "tokens" for size cases and
+      // "surrogate" / "invalid" for content-encoding cases.
+      const lower = String(detail).toLowerCase();
+      if (lower.includes('token') || lower.includes('context')) {
+        hint = ' Bad request — likely exceeds the model context window. Try sandwich_prune first.';
+      } else if (lower.includes('surrogate') || lower.includes('utf')) {
+        hint = ' Bad request — UTF-16 surrogate / encoding issue. Should not normally happen (we sanitize lone surrogates); please report.';
+      } else {
+        hint = ` Bad request: ${detail.slice(0, 200)}.`;
+      }
+    }
     return {
       content: [{ type: 'text', text: `Sonnet planning call failed: HTTP ${status} ${detail}.${hint}` }],
       isError: true
@@ -341,7 +396,7 @@ export async function handleAnalyzeForArchive(args = {}) {
   const lastMessageUuid = chain[chain.length - 1].data.uuid;
 
   const planId = randomUUID();
-  const cost = formatCost(SONNET_MODEL, resp.usage.input_tokens, resp.usage.output_tokens);
+  const cost = formatCost(planModel, resp.usage.input_tokens, resp.usage.output_tokens);
 
   // Compute deterministic checksum BEFORE adding fields that aren't part of the
   // plan itself (createdAt, costs, etc.) — only hash the load-bearing payload.
@@ -416,7 +471,7 @@ export async function handleAnalyzeForArchive(args = {}) {
     hallucinated.length ? `- Hallucinated/invalid entries dropped from plan: ${hallucinated.length}` : '',
     ``,
     derivedPurpose ? `**Derived purpose** (Haiku pre-pass${derivePurposeCost ? `, ${derivePurposeCost}` : ''}):\n${derivedPurpose}\n` : '',
-    `**Cost (Sonnet plan call)**: ${cost}`,
+    `**Cost (plan call, ${planModel})**: ${cost}`,
     derivePurposeCost && derivedPurpose ? `**Cost (Haiku purpose-pass)**: ${derivePurposeCost}` : '',
     ``,
     `Sample entries (first 5 of ${validEntries.length}):`,
