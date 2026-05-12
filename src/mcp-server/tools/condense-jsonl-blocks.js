@@ -53,9 +53,20 @@ function pruneOldBackups(backupDir, convId) {
 }
 
 export async function handleCondenseJsonlBlocks(args = {}) {
-  const filePath = findConversationFile(args.conversation_id);
-  if (!filePath) {
-    return { content: [{ type: 'text', text: 'No conversation file found.' }], isError: true };
+  // Explicit path overrides UUID-based lookup. Useful for testing on a copy
+  // (where multiple files share the same UUID across directories — the lookup
+  // would silently pick the most-recently-modified, which can be the wrong file).
+  let filePath;
+  if (args.jsonl_path) {
+    if (!require('fs').existsSync(args.jsonl_path)) {
+      return { content: [{ type: 'text', text: `jsonl_path does not exist: ${args.jsonl_path}` }], isError: true };
+    }
+    filePath = args.jsonl_path;
+  } else {
+    filePath = findConversationFile(args.conversation_id);
+    if (!filePath) {
+      return { content: [{ type: 'text', text: 'No conversation file found.' }], isError: true };
+    }
   }
 
   const dryRun = args.dry_run === true;
@@ -98,7 +109,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     const lastUuid = chain[chain.length - 1].data.uuid;
     planUsed = findMatchingV2Plan(filePath, chain.length, lastUuid);
     usingThinkingFallback = !planUsed;
-    extraOpts = { plan: planUsed, turnsByEntryUuid, totalTurns: turns.length, thinkingMarkerStyle: args.thinking_marker_style || 'minimal' };
+    extraOpts = { plan: planUsed, turnsByEntryUuid, totalTurns: turns.length, thinkingMarkerStyle: args.thinking_marker_style || 'minimal', keepRecentTurns: args.keep_recent_turns };
   }
 
   const sidecar = loadCondenseMeta(filePath);

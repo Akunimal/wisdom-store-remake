@@ -543,7 +543,10 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
     const droppedTurns = plan ? pass2DroppedTurnIds(plan) : new Set();
     const turnsByEntryUuid = opts.turnsByEntryUuid || new Map();  // uuid → {turn_id, totalTurns}
     const totalTurns = opts.totalTurns || 0;
-    const recentBoundary = totalTurns - THINKING_KEEP_RECENT_TURNS;
+    // Skip the most-recent N turns (active state). Adapt to short chains:
+    // for tiny conversations don't reserve a 30-turn tail (would skip everything).
+    const effectiveKeepRecent = opts.keepRecentTurns ?? Math.min(THINKING_KEEP_RECENT_TURNS, Math.max(1, Math.ceil(totalTurns / 2)));
+    const recentBoundary = totalTurns - effectiveKeepRecent;
 
     for (let i = 0; i < chainFullEntries.length; i++) {
       const entry = chainFullEntries[i].fullEntry;
@@ -622,7 +625,8 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
   if (modes.has('refetch-markers')) {
     const turnsByEntryUuid = opts.turnsByEntryUuid || new Map();
     const totalTurns = opts.totalTurns || 0;
-    const recentBoundary = totalTurns - REFETCH_KEEP_RECENT_TURNS;
+    const effectiveKeepRecent = opts.keepRecentTurns ?? Math.min(REFETCH_KEEP_RECENT_TURNS, Math.max(1, Math.ceil(totalTurns / 2)));
+    const recentBoundary = totalTurns - effectiveKeepRecent;
 
     // Re-pair tool_use → tool_result (similar to other modes)
     for (let i = 0; i < chainFullEntries.length; i++) {
@@ -701,7 +705,8 @@ export function buildCondensePlan(chainFullEntries, opts = {}) {
   if (modes.has('tool-args')) {
     const turnsByEntryUuid = opts.turnsByEntryUuid || new Map();
     const totalTurns = opts.totalTurns || 0;
-    const recentBoundary = totalTurns - TOOL_ARGS_KEEP_RECENT_TURNS;
+    const effectiveKeepRecent = opts.keepRecentTurns ?? Math.min(TOOL_ARGS_KEEP_RECENT_TURNS, Math.max(1, Math.ceil(totalTurns / 2)));
+    const recentBoundary = totalTurns - effectiveKeepRecent;
 
     for (let i = 0; i < chainFullEntries.length; i++) {
       const entry = chainFullEntries[i].fullEntry;
