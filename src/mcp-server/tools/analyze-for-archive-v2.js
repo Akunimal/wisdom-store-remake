@@ -38,6 +38,7 @@ import {
 } from '../lib/jsonl.js';
 import { getAnthropicClient, formatCost, PRICING } from '../lib/anthropic-client.js';
 import { segmentTurns } from '../lib/turn-segmenter.js';
+import { preFilterTurn } from '../lib/turn-prefilter.js';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const SONNET_MODEL = 'claude-sonnet-4-6';
@@ -329,10 +330,11 @@ const PASS2_SYSTEM = `You are an archival planner. You receive structured per-tu
 LOAD-BEARING DEFINITION (the user's words):
 > Keeping things essential to its job, as presumed from user messages. Typically having the latest content/state on files and plans it frequently touches, summary of reasons we changed directions / why we're going the direction we are now. Don't need duplicates, especially older copies. But simply pruning out older copies does run the risk of losing: what we tried that didn't work, why we didn't do X. Worth summarizing mistakes / pitfalls / reasons / current paths.
 
-KEEP VERBATIM (do not list — implicit default):
-- importance:"load_bearing" turns
+KEEP VERBATIM (action: "keep"):
+- importance:"load_bearing" turns whose content is still load-bearing (not superseded later)
 - the most recent ~30 turns (active state)
 - direction-change rationale, decisions, current-state file content
+- Use action:"keep" explicitly so the audit log shows your reasoning per turn
 
 DROP (action: "drop"):
 - importance:"discardable" turns
@@ -348,7 +350,9 @@ DISTILL (action: "distill", with 1-2 sentence \`distillation\`):
 
 CRITICAL: pure deletion of failed attempts is dangerous because the agent later forgets WHY they're on path Y and might re-suggest X. Prefer distill over drop for any turn whose lesson matters.
 
-Output via submit_archival_plan with entries[] of {turn_id, action, distillation?, reason}. Only include action-required turns.`;
+Output via submit_archival_plan with entries[] of {turn_id, action, distillation?, reason}. You MUST include EVERY turn in entries[] with an explicit action — keep / drop / distill. The reason field is REQUIRED. distillation is REQUIRED iff action=distill (1-2 sentences capturing lesson/decision/outcome).
+
+Default to action:"keep" when in doubt — pure deletion is dangerous because the agent later forgets WHY it's on path Y and might re-suggest X.`;
 
 const PASS2_TOOL = {
   name: 'submit_archival_plan',
@@ -362,8 +366,8 @@ const PASS2_TOOL = {
           type: 'object',
           properties: {
             turn_id: { type: 'integer' },
-            action: { type: 'string', enum: ['drop', 'distill'] },
-            distillation: { type: 'string' },
+            action: { type: 'string', enum: ['keep', 'drop', 'distill'], description: 'keep = no change (verbatim, default for active state); drop = remove all entries in this turn; distill = collapse to a 1-2 sentence summary' },
+            distillation: { type: 'string', description: 'Required when action=distill. 1-2 sentences capturing the lesson/decision/outcome.' },
             reason: { type: 'string' }
           },
           required: ['turn_id', 'action', 'reason']
@@ -540,6 +544,32 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     fullEntries: turn.entries.map(e => readJsonlLine(filePath, e.line) || e.data)
   }));
 
+  // Apply heuristic pre-filter: turns that are obviously discardable get a
+  // synthetic summary without a Haiku call (~30% cost savings on typical
+  // orchestrator/worker conversations, validated 100% precision on loop168).
+  // Pre-filtered turns still flow into Pass 2 with their synthetic summary so
+  // cross-turn judgment stays complete.
+  const turnsForHaiku = [];
+  const prefilteredSummaries = []; // { turn_id, ... synthetic Pass 1 shape }
+  let prefilteredCount = 0;
+  for (const tw of turnsWithFullEntries) {
+    const synth = (args.disable_prefilter === true)
+      ? null
+      : preFilterTurn(tw.turn, tw.fullEntries);
+    if (synth) {
+      prefilteredSummaries.push({
+        turn_id: tw.turn.turn_id,
+        first_uuid: tw.turn.first_uuid,
+        last_uuid: tw.turn.last_uuid,
+        entry_count: tw.turn.entries.length,
+        ...synth
+      });
+      prefilteredCount++;
+    } else {
+      turnsForHaiku.push(tw);
+    }
+  }
+
   // ---- Pass 1: per-turn classify+summarize ----
   const concurrency = Number.isInteger(args.concurrency) && args.concurrency > 0
     ? Math.min(args.concurrency, 10)
@@ -548,7 +578,7 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
   const t0 = Date.now();
   const { results: pass1Results, usage: pass1Usage } = await runPass1Concurrent({
     client,
-    turnsWithFullEntries,
+    turnsWithFullEntries: turnsForHaiku,
     concurrency
   });
   const pass1Elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -557,7 +587,7 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
   const pass1Failed = [];
   for (let i = 0; i < pass1Results.length; i++) {
     const r = pass1Results[i];
-    const t = turnsToProcess[i];
+    const t = turnsForHaiku[i].turn;  // index into the Haiku-only subset
     if (r.error) {
       pass1Failed.push({ turn_id: t.turn_id, error: r.error });
       pass1Entries.push({ turn_id: t.turn_id, error: r.error, first_uuid: t.first_uuid, last_uuid: t.last_uuid });
@@ -571,6 +601,10 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
       });
     }
   }
+  // Merge in the pre-filtered synthetic summaries; sort by turn_id so Pass 2 sees
+  // the conversation in chronological order.
+  pass1Entries.push(...prefilteredSummaries);
+  pass1Entries.sort((a, b) => a.turn_id - b.turn_id);
 
   // ---- Pass 2: cross-turn judgment ----
   const summariesForPass2 = pass1Entries
@@ -582,15 +616,21 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
   try {
     pass2Resp = await client.messages.create({
       model: HAIKU_MODEL,
-      max_tokens: 8000,
+      max_tokens: 16384,  // Haiku 4.5 max output. 8K was insufficient for a 250-turn explicit-decision schema.
       system: [{ type: 'text', text: PASS2_SYSTEM, cache_control: { type: 'ephemeral' } }],
       tools: [PASS2_TOOL],
       tool_choice: { type: 'tool', name: 'submit_archival_plan' },
       messages: [{ role: 'user', content: `Total turns: ${turnsToProcess.length}. Plan archival actions per turn.\n\n${summariesForPass2}` }]
     });
     const tu = pass2Resp.content.find(b => b.type === 'tool_use');
-    if (tu) pass2Plan = tu.input?.entries || [];
-    else pass2Error = `Pass 2 returned no tool_use, stop_reason=${pass2Resp.stop_reason}`;
+    if (tu) {
+      pass2Plan = tu.input?.entries || [];
+      // If output was truncated (stop_reason='max_tokens'), surface it — Pass 2's
+      // entries list may be incomplete and downstream apply will under-act.
+      if (pass2Resp.stop_reason === 'max_tokens' && pass2Plan.length < turnsToProcess.length) {
+        pass2Error = `Pass 2 hit max_tokens with only ${pass2Plan.length}/${turnsToProcess.length} decisions — output truncated. Re-run with smaller max_turns or wait for prompt-tightening.`;
+      }
+    } else pass2Error = `Pass 2 returned no tool_use, stop_reason=${pass2Resp.stop_reason}`;
   } catch (e) {
     pass2Error = `Pass 2 HTTP ${e.status || '?'}: ${e.message}`;
   }
@@ -602,17 +642,18 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
   for (const entry of pass2Plan) {
     const t = turnById.get(entry.turn_id);
     if (!t) { skippedTurns.push({ turn_id: entry.turn_id, reason: 'turn not in processed set' }); continue; }
-    if (entry.action === 'distill' && !entry.distillation) { skippedTurns.push({ turn_id: entry.turn_id, reason: 'distill without distillation' }); continue; }
-    // Per-turn drop = drop every entry in the turn. Per-turn distill = collapse the
-    // whole turn into a single distillation entry on the FIRST uuid; drop the rest.
-    if (entry.action === 'drop') {
-      for (const e of t.entries) {
-        validUuidEntries.push({
-          uuid: e.data.uuid, action: 'drop',
-          reason: `[turn ${t.turn_id}] ${entry.reason}`
-        });
+    if (entry.action === 'keep') {
+      // Explicit-keep: no per-uuid entries needed. The chain entries stay verbatim.
+      // Tracked here for audit completeness only.
+      continue;
+    }
+    if (entry.action === 'distill') {
+      if (!entry.distillation) {
+        skippedTurns.push({ turn_id: entry.turn_id, reason: 'distill without distillation' });
+        continue;
       }
-    } else { // distill
+      // Per-turn distill = collapse the whole turn into a single distillation entry
+      // on the FIRST uuid; drop the rest of the entries.
       const [first, ...rest] = t.entries;
       validUuidEntries.push({
         uuid: first.data.uuid, action: 'distill',
@@ -625,7 +666,19 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
           reason: `[turn ${t.turn_id}] (collapsed into distill on first uuid)`
         });
       }
+      continue;
     }
+    if (entry.action === 'drop') {
+      for (const e of t.entries) {
+        validUuidEntries.push({
+          uuid: e.data.uuid, action: 'drop',
+          reason: `[turn ${t.turn_id}] ${entry.reason}`
+        });
+      }
+      continue;
+    }
+    // Unknown action — skip with explicit log so it surfaces in the plan file
+    skippedTurns.push({ turn_id: entry.turn_id, reason: `unknown action: ${entry.action}` });
   }
 
   // ---- Persist plan ----
@@ -662,6 +715,7 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
       cacheWriteDollarsApprox: cacheWriteDollars,
       elapsedSec: pass1Elapsed,
       failedTurns: pass1Failed,
+      prefilteredCount,
       summaries: pass1Entries  // for inspection — pattern mining etc.
     },
     pass2: {
@@ -679,6 +733,11 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
 
   const dropCount = validUuidEntries.filter(e => e.action === 'drop').length;
   const distillCount = validUuidEntries.filter(e => e.action === 'distill').length;
+  // Pass 2 turn-level keep/drop/distill counts (action audit log)
+  const turnKept = pass2Plan.filter(e => e.action === 'keep').length;
+  const turnDropped = pass2Plan.filter(e => e.action === 'drop').length;
+  const turnDistilled = pass2Plan.filter(e => e.action === 'distill').length;
+  const turnUnknown = pass2Plan.filter(e => !['keep','drop','distill'].includes(e.action)).length;
 
   const lines = [
     `## analyze_for_archive_v2 — Plan Generated (two-pass)`,
@@ -690,7 +749,8 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     `**Chain**: ${chain.length} entries, ${allTurns.length} turns total, ${turnsToProcess.length} processed`,
     ``,
     `### Pass 1 (per-turn Haiku classify+summarize)`,
-    `- Concurrency: ${concurrency}, elapsed: ${pass1Elapsed}s`,
+    `- Pre-filtered (no Haiku): ${prefilteredCount}/${turnsToProcess.length} turns (${(100*prefilteredCount/turnsToProcess.length).toFixed(0)}%)`,
+    `- Haiku calls: ${turnsForHaiku.length}, concurrency: ${concurrency}, elapsed: ${pass1Elapsed}s`,
     `- Cost: ${pass1CostStr}`,
     `- Cache reads: ${pass1Usage.cache_read_input_tokens.toLocaleString()} tokens (~$${cacheReadDollars.toFixed(4)})`,
     `- Cache writes: ${pass1Usage.cache_creation_input_tokens.toLocaleString()} tokens (~$${cacheWriteDollars.toFixed(4)})`,
@@ -701,10 +761,16 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     pass2Error ? `- ERROR: ${pass2Error}` : `- Turn-level decisions: ${pass2Plan.length}`,
     `- Skipped turns (invalid): ${skippedTurns.length}`,
     ``,
+    `### Pass 2 turn-level decisions (audit)`,
+    `- Keep verbatim: ${turnKept} turns`,
+    `- Drop entirely: ${turnDropped} turns`,
+    `- Distill: ${turnDistilled} turns`,
+    turnUnknown ? `- ⚠️ Unknown action (skipped): ${turnUnknown} turns` : '',
+    ``,
     `### Per-uuid plan (for apply_archive_plan)`,
     `- Drop entries: ${dropCount}`,
     `- Distill entries: ${distillCount}`,
-    `- Implicit-keep entries: ${chain.length - dropCount - distillCount}`,
+    `- Kept entries: ${chain.length - dropCount - distillCount}`,
     ``,
     `### Type breakdown (from Pass 1 — useful for spotting structural patterns)`,
     ...((() => {

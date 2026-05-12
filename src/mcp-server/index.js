@@ -561,6 +561,11 @@ const TOOLS = [
           description: 'Max in-flight Pass 1 calls. Default 5; capped at 10 to stay polite.',
           default: 5
         },
+        disable_prefilter: {
+          type: 'boolean',
+          description: 'Default false. When false, obviously-discardable turns (single-entry, multi-entry no-tool-use under 700 chars) skip the Haiku call and get a synthetic summary. Validated 100% precision on loop168 — saves ~30% Pass 1 cost. Set true to force every turn through Haiku for comparison testing.',
+          default: false
+        },
         allowApiKey: {
           type: 'boolean',
           description: 'Default false. Refuses without OAuth unless explicitly opted into ANTHROPIC_API_KEY (no surprise charges).',
