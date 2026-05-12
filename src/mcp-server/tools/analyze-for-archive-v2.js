@@ -70,12 +70,18 @@ For each turn, you MUST submit (via the submit_turn_summary tool):
     {kind: "tool_use", name, args_brief}
     {kind: "decision", text}
     {kind: "search", target}
-- duplicate_signal: short text identifying this turn for cross-turn duplicate detection (e.g. "read /path/to/file.js lines 1-100", "ran 'npm test'", "decided to use Redis")
+- duplicate_signal: short text identifying this turn for cross-turn duplicate detection
 - lesson: optional 1-sentence what-was-learned, only if meaningful (failed attempts especially)
 - importance: one of ${VALID_IMPORTANCE.join(' | ')}
    - load_bearing: must be kept verbatim (decisions, current state, user intent, current file content the agent is actively working on)
    - supporting: useful context but droppable if duplicated or superseded later
    - discardable: tool output already incorporated, micro-exchange with no decision, system reminder, interrupted request
+- value_score: integer 0-100 — your finer judgment of how essential this turn is for the session to continue effectively
+   - 0-30: clearly droppable (no future value beyond what's captured in actions/decisions)
+   - 31-60: supporting context (distillable to a sentence — lesson preserved, bytes saved)
+   - 61-85: important context (probably keep verbatim, but could distill if needed)
+   - 86-100: essential (must keep verbatim — represents current state, user intent, or active decision)
+   IMPORTANT: When a session purpose is provided in the user message, weight your value_score by RELEVANCE TO THAT PURPOSE. A turn off-topic from the purpose gets a low score even if it's a "decision" structurally.
 
 Be terse. Each summary should be readable in 5 seconds. Below are worked examples covering the common cases.
 
@@ -319,13 +325,69 @@ const PASS1_TOOL = {
       },
       duplicate_signal: { type: 'string' },
       lesson: { type: 'string' },
-      importance: { type: 'string', enum: VALID_IMPORTANCE }
+      importance: { type: 'string', enum: VALID_IMPORTANCE },
+      value_score: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 100,
+        description: 'Per-turn value score 0-100. 0-30 = clearly droppable (no future value); 31-60 = supporting (distillable); 61-85 = important context; 86-100 = essential (must keep verbatim). Pass 2 may use this as a finer signal than the categorical importance bucket.'
+      }
     },
-    required: ['type', 'summary', 'key_artifacts', 'duplicate_signal', 'importance']
+    required: ['type', 'summary', 'key_artifacts', 'duplicate_signal', 'importance', 'value_score']
   }
 };
 
-const PASS2_SYSTEM_DEFAULT = `You are an archival planner. You receive structured per-turn summaries of a Claude Code conversation, and you decide which turns to drop entirely, which to distill (replace with a 1-2 sentence summary), and which to keep verbatim (the implicit default).
+async function derivePurposeWithHaiku(client, chain, readFullLineFn, filePath) {
+  // Cheap pre-pass over user messages only — derives a 3-5 sentence purpose
+  // statement that anchors Pass 1 + Pass 2's judgment ("relevant to purpose"
+  // vs "off-topic"). Bonus: persisted in the plan file for dashboard reuse.
+  const userTexts = [];
+  for (const e of chain) {
+    if (e.data.type !== 'user') continue;
+    const f = readFullLineFn(filePath, e.line) || e.data;
+    const c = f?.message?.content;
+    let txt = '';
+    if (typeof c === 'string') txt = c;
+    else if (Array.isArray(c)) {
+      for (const b of c) {
+        if (b?.type === 'text') txt += b.text || '';
+        // Skip tool_result content — we only want what the user typed
+      }
+    }
+    txt = (txt || '').trim();
+    if (txt && txt.length > 5) userTexts.push(txt);
+  }
+  // Cap at first 50 + last 50 user messages to keep cost bounded
+  const sample = userTexts.length > 100
+    ? [...userTexts.slice(0, 50), '...', ...userTexts.slice(-50)]
+    : userTexts;
+  const prompt = `Below are the user-typed messages from a Claude Code session, in chronological order. Read them and produce a 3-5 sentence summary of what this session is about — the main goals, the active workstream, what the user is trying to accomplish. This summary will be used to judge which turns are essential to the session's purpose vs droppable.
+
+Output ONLY the summary, no preamble.
+
+USER MESSAGES (${sample.length} of ${userTexts.length}):
+${sample.join('\n\n---\n\n')}`;
+
+  try {
+    const resp = await client.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 600,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    const purpose = resp.content.find(b => b.type === 'text')?.text?.trim() || '';
+    return {
+      purpose,
+      cost: formatCost(HAIKU_MODEL, resp.usage.input_tokens, resp.usage.output_tokens),
+      usage: resp.usage
+    };
+  } catch (e) {
+    return { purpose: '', error: `Purpose pre-pass HTTP ${e.status || '?'}: ${e.message}`, usage: null };
+  }
+}
+
+const PASS2_SYSTEM_DEFAULT = `You are an archival planner. You receive structured per-turn summaries of a Claude Code conversation, and you decide which turns to drop entirely, which to distill (replace with a 1-2 sentence summary), and which to keep verbatim.
+
+If a SESSION PURPOSE is supplied in the user message, USE IT as your primary judgment criterion: turns relevant to the stated purpose get higher priority for keep; turns off-topic from the purpose are strong drop candidates regardless of category. Each turn carries a value_score (0-100) from Pass 1 — high scores indicate Pass 1's judgment that the turn is essential.
 
 LOAD-BEARING DEFINITION (the user's words):
 > Keeping things essential to its job, as presumed from user messages. Typically having the latest content/state on files and plans it frequently touches, summary of reasons we changed directions / why we're going the direction we are now. Don't need duplicates, especially older copies. But simply pruning out older copies does run the risk of losing: what we tried that didn't work, why we didn't do X. Worth summarizing mistakes / pitfalls / reasons / current paths.
@@ -354,6 +416,8 @@ Output via submit_archival_plan with entries[] of {turn_id, action, distillation
 Default to action:"keep" when in doubt.`;
 
 const PASS2_SYSTEM_AGGRESSIVE = `You are an AGGRESSIVE archival planner. The user has already accepted information loss in exchange for context window savings — they want the conversation cut down to its essential context (target ~50% of current size or below). You receive structured per-turn summaries and decide drop / distill / keep per turn.
+
+If a SESSION PURPOSE is supplied in the user message, USE IT as the primary judgment criterion: turns clearly off-topic from the stated purpose are immediate drop candidates regardless of category. Each turn carries a value_score (0-100) from Pass 1 — high scores indicate essential context.
 
 LOAD-BEARING DEFINITION (the user's words):
 > Keeping things essential to its job, as presumed from user messages. Typically having the latest content/state on files and plans it frequently touches, summary of reasons we changed directions / why we're going the direction we are now. Don't need duplicates, especially older copies. But simply pruning out older copies does run the risk of losing: what we tried that didn't work, why we didn't do X. Worth summarizing mistakes / pitfalls / reasons / current paths.
@@ -466,14 +530,15 @@ function compactEntryForTurn(fullData) {
   return `<entry uuid="${fullData.uuid || '?'}" role="${role}" ts="${ts}">\n${body}\n</entry>`;
 }
 
-function buildTurnPrompt(turn, fullEntries) {
+function buildTurnPrompt(turn, fullEntries, purposeText) {
+  const purposePrefix = purposeText ? `SESSION PURPOSE:\n${purposeText}\n\n` : '';
   const turnBody = fullEntries.map(compactEntryForTurn).join('\n\n');
   const clipped = clipText(turnBody, PER_TURN_MAX_CHARS);
-  return `TURN #${turn.turn_id} (${fullEntries.length} entries, ${turn.start_timestamp || '?'} → ${turn.end_timestamp || '?'})\n\n${clipped}`;
+  return `${purposePrefix}TURN #${turn.turn_id} (${fullEntries.length} entries, ${turn.start_timestamp || '?'} → ${turn.end_timestamp || '?'})\n\n${clipped}`;
 }
 
-async function runPass1Once({ client, turn, fullEntries }) {
-  const userText = stripLoneSurrogates(buildTurnPrompt(turn, fullEntries));
+async function runPass1Once({ client, turn, fullEntries, purposeText }) {
+  const userText = stripLoneSurrogates(buildTurnPrompt(turn, fullEntries, purposeText));
   const resp = await client.messages.create({
     model: HAIKU_MODEL,
     max_tokens: 1500,
@@ -491,7 +556,7 @@ async function runPass1Once({ client, turn, fullEntries }) {
   return { summary: tu.input, usage: resp.usage };
 }
 
-async function runPass1WithBackoff(args) {
+async function runPass1WithBackoff(args) {  // args includes purposeText
   let attempt = 0;
   let backoff = PASS1_BACKOFF_INITIAL_MS;
   while (attempt <= PASS1_MAX_RETRIES) {
@@ -514,7 +579,7 @@ async function runPass1WithBackoff(args) {
   return { error: 'unreachable', usage: null };
 }
 
-async function runPass1Concurrent({ client, turnsWithFullEntries, concurrency, onProgress }) {
+async function runPass1Concurrent({ client, turnsWithFullEntries, concurrency, onProgress, purposeText: workerPurposeText }) {
   const results = new Array(turnsWithFullEntries.length);
   let cursor = 0;
   let usageIn = 0, usageOut = 0, usageCacheRead = 0, usageCacheWrite = 0;
@@ -524,7 +589,7 @@ async function runPass1Concurrent({ client, turnsWithFullEntries, concurrency, o
       const idx = cursor++;
       if (idx >= turnsWithFullEntries.length) return;
       const { turn, fullEntries } = turnsWithFullEntries[idx];
-      const r = await runPass1WithBackoff({ client, turn, fullEntries });
+      const r = await runPass1WithBackoff({ client, turn, fullEntries, purposeText: workerPurposeText });
       results[idx] = r;
       if (r.usage) {
         usageIn += r.usage.input_tokens || 0;
@@ -562,6 +627,8 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
   const allowApiKey = args.allowApiKey === true;
   const aggressive = args.aggressive === true;
   const pass2SystemPrompt = aggressive ? PASS2_SYSTEM_AGGRESSIVE : PASS2_SYSTEM_DEFAULT;
+  const forceKeepRecentN = Number.isInteger(args.force_keep_recent_n) ? args.force_keep_recent_n : 30;
+  const skipPurposePrePass = args.skip_purpose === true;
   let clientResult;
   try { clientResult = getAnthropicClient({ allowApiKey }); }
   catch (e) { return { content: [{ type: 'text', text: `Auth: ${e.message}` }], isError: true }; }
@@ -579,6 +646,15 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     ? Math.min(args.max_turns, allTurns.length)
     : allTurns.length;
   const turnsToProcess = allTurns.slice(0, maxTurns);
+
+  // ===== Purpose pre-pass (cheap Haiku over user messages) =====
+  let purposeText = '', purposeCost = '', purposeError = '';
+  if (!skipPurposePrePass) {
+    const r = await derivePurposeWithHaiku(client, chain, readJsonlLine, filePath);
+    purposeText = r.purpose || '';
+    purposeCost = r.cost || '';
+    purposeError = r.error || '';
+  }
 
   // Eagerly resolve full entries for each turn (Pass 1 needs the full bodies).
   const turnsWithFullEntries = turnsToProcess.map(turn => ({
@@ -621,7 +697,8 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
   const { results: pass1Results, usage: pass1Usage } = await runPass1Concurrent({
     client,
     turnsWithFullEntries: turnsForHaiku,
-    concurrency
+    concurrency,
+    purposeText
   });
   const pass1Elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
@@ -662,7 +739,7 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
       system: [{ type: 'text', text: pass2SystemPrompt, cache_control: { type: 'ephemeral' } }],
       tools: [PASS2_TOOL],
       tool_choice: { type: 'tool', name: 'submit_archival_plan' },
-      messages: [{ role: 'user', content: `Total turns: ${turnsToProcess.length}. Plan archival actions per turn.\n\n${summariesForPass2}` }]
+      messages: [{ role: 'user', content: `${purposeText ? 'SESSION PURPOSE:\n' + purposeText + '\n\n' : ''}Total turns: ${turnsToProcess.length}. Plan archival actions per turn.\n\n${summariesForPass2}` }]
     });
     const tu = pass2Resp.content.find(b => b.type === 'tool_use');
     if (tu) {
@@ -675,6 +752,22 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     } else pass2Error = `Pass 2 returned no tool_use, stop_reason=${pass2Resp.stop_reason}`;
   } catch (e) {
     pass2Error = `Pass 2 HTTP ${e.status || '?'}: ${e.message}`;
+  }
+
+  // Force-keep recent N turns regardless of Pass 2's decisions (recency safety net).
+  // The agent needs verbatim recent state to know what it was just doing.
+  if (forceKeepRecentN > 0 && pass2Plan.length > 0) {
+    const totalTurns = turnsToProcess.length;
+    const boundary = totalTurns - forceKeepRecentN;
+    let overrides = 0;
+    for (const d of pass2Plan) {
+      if (d.turn_id > boundary && d.action !== 'keep') {
+        d.action = 'keep';
+        d.reason = `[force-kept by force_keep_recent_n=${forceKeepRecentN}; was ${d.action || '?'}]`;
+        overrides++;
+      }
+    }
+    if (overrides) console.error(`[v2] Force-kept ${overrides} of last ${forceKeepRecentN} turns (overrode Pass 2 decisions)`);
   }
 
   // Translate turn-level decisions → per-uuid plan entries
@@ -749,6 +842,11 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     authMode, billing, subscriptionType,
     turnsProcessed: turnsToProcess.length,
     turnsTotal: allTurns.length,
+    purpose: purposeText || null,
+    purposeCost: purposeCost || null,
+    purposeError: purposeError || null,
+    forceKeepRecentN,
+    aggressive,
     pass1: {
       cost: pass1CostStr,
       cacheReadTokens: pass1Usage.cache_read_input_tokens,
@@ -758,7 +856,7 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
       elapsedSec: pass1Elapsed,
       failedTurns: pass1Failed,
       prefilteredCount,
-      summaries: pass1Entries  // for inspection — pattern mining etc.
+      summaries: pass1Entries  // includes value_score + reasoning per turn
     },
     pass2: {
       cost: pass2CostStr,
@@ -783,6 +881,7 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
 
   const lines = [
     `## analyze_for_archive_v2 — Plan Generated (two-pass)`,
+    purposeText ? `\n**Session purpose** (from Haiku pre-pass${purposeCost ? `, ${purposeCost}` : ''}):\n> ${purposeText.replace(/\n/g, '\n> ')}\n` : '',
     ``,
     `**Plan ID**: \`${planId}\``,
     `**Checksum**: \`${checksum.slice(0, 16)}...\``,

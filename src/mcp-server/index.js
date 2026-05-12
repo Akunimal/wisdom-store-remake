@@ -540,7 +540,17 @@ const TOOLS = [
         },
         aggressive: {
           type: 'boolean',
-          description: 'Default false. When true, Pass 2 uses an aggressive archival prompt (target ~50% chain reduction; drops more turns; distills more readily; keeps only most-recent ~20 turns + load-bearing latest decisions). Use when the user has explicitly accepted information loss in exchange for context savings.',
+          description: 'Default false. When true, Pass 2 uses an aggressive archival prompt (target ~50% chain reduction; drops more turns; distills more readily). Use when the user has explicitly accepted information loss in exchange for context savings.',
+          default: false
+        },
+        force_keep_recent_n: {
+          type: 'integer',
+          description: 'Recency safety net: force the last N turns to action="keep" regardless of Pass 2 decisions. Default 30. Set to 0 to disable (let Pass 2 decide for all turns including recent state).',
+          default: 30
+        },
+        skip_purpose: {
+          type: 'boolean',
+          description: 'Default false. When false, runs a cheap Haiku pre-pass over user messages to derive a 3-5 sentence session-purpose statement, fed to Pass 1 + Pass 2 as guiding context (and persisted in the plan file for dashboard reuse). Set true to skip (saves ~$0.005 + the small additional latency).',
           default: false
         }
       }
