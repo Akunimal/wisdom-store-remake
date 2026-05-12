@@ -117,3 +117,89 @@ test('buildCondensePlan: idempotent — re-running on already-condensed file pro
   // r1 is below the 256-char threshold, so memory-reads should skip it
   assert.equal(stats.memoryReadsCondensed, 0);
 });
+
+test('buildCondensePlan: thinking mode condenses old thinking blocks via Pass 1 summaries', () => {
+  const longThinking = 'A'.repeat(2000);
+  const chain = [
+    { uuid: 'u1', fullEntry: { uuid: 'u1', message: { content: [
+      { type: 'thinking', thinking: longThinking },
+      { type: 'text', text: 'agent reply text' }
+    ]}}}
+  ];
+  const turnsByEntryUuid = new Map([['u1', { turn_id: 1, totalTurns: 100 }]]);
+  const fakePlan = {
+    pass1: { summaries: [{ turn_id: 1, summary: 'Decided to refactor auth', importance: 'load_bearing' }] },
+    pass2: { turnDecisions: [] }
+  };
+  const { replace, stats } = buildCondensePlan(chain, {
+    modes: ['thinking'],
+    plan: fakePlan,
+    turnsByEntryUuid,
+    totalTurns: 100
+  });
+  assert.equal(stats.thinkingCondensed, 1);
+  assert.ok(stats.thinkingBytesSaved >= 2000);
+  assert.equal(stats.thinkingFallbackUsed, 0);
+  const newContent = replace.get('u1').message.content;
+  assert.equal(newContent[0].type, 'text', 'thinking block converted to text');
+  assert.ok(newContent[0].text.includes('turn outcome:'));
+  assert.ok(newContent[0].text.includes('Decided to refactor auth'));
+});
+
+test('buildCondensePlan: thinking mode falls back to heuristic when no plan summary for that turn', () => {
+  const longThinking = 'first paragraph thinking that explores options and considers tradeoffs.\n\nSecond paragraph reaches conclusion: we should use Redis with TTL of 1 hour.';
+  const chain = [
+    { uuid: 'u1', fullEntry: { uuid: 'u1', message: { content: [
+      { type: 'thinking', thinking: longThinking + ' '.repeat(500) }  // pad to >400 bytes
+    ]}}}
+  ];
+  const turnsByEntryUuid = new Map([['u1', { turn_id: 1, totalTurns: 100 }]]);
+  // No plan provided
+  const { replace, stats } = buildCondensePlan(chain, {
+    modes: ['thinking'],
+    turnsByEntryUuid,
+    totalTurns: 100
+  });
+  assert.equal(stats.thinkingCondensed, 1);
+  assert.equal(stats.thinkingFallbackUsed, 1);
+  const text = replace.get('u1').message.content[0].text;
+  assert.ok(text.includes('heuristic last-paragraph kept'));
+});
+
+test('buildCondensePlan: thinking mode skips recent N turns (active state)', () => {
+  const longThinking = 'A'.repeat(2000);
+  const chain = [
+    { uuid: 'u1', fullEntry: { uuid: 'u1', message: { content: [{ type: 'thinking', thinking: longThinking }]}}},
+    { uuid: 'u2', fullEntry: { uuid: 'u2', message: { content: [{ type: 'thinking', thinking: longThinking }]}}}
+  ];
+  // u1 in turn 50 (old), u2 in turn 95 (within recent-30 boundary if totalTurns=100)
+  const turnsByEntryUuid = new Map([
+    ['u1', { turn_id: 50, totalTurns: 100 }],
+    ['u2', { turn_id: 95, totalTurns: 100 }]
+  ]);
+  const { replace, stats } = buildCondensePlan(chain, {
+    modes: ['thinking'],
+    turnsByEntryUuid,
+    totalTurns: 100
+  });
+  // Only u1 (turn 50, < 100-30=70 boundary) should be condensed; u2 (turn 95) stays
+  assert.ok(replace.has('u1'));
+  assert.ok(!replace.has('u2'), 'recent-turn thinking should not be condensed');
+});
+
+test('buildCondensePlan: thinking mode skips Pass-2-dropped turns', () => {
+  const longThinking = 'A'.repeat(2000);
+  const chain = [
+    { uuid: 'u1', fullEntry: { uuid: 'u1', message: { content: [{ type: 'thinking', thinking: longThinking }]}}}
+  ];
+  const turnsByEntryUuid = new Map([['u1', { turn_id: 5, totalTurns: 100 }]]);
+  const fakePlan = {
+    pass1: { summaries: [{ turn_id: 5, summary: 'X', importance: 'discardable' }] },
+    pass2: { turnDecisions: [{ turn_id: 5, action: 'drop', reason: 'duplicate' }] }
+  };
+  const { replace, stats } = buildCondensePlan(chain, {
+    modes: ['thinking'], plan: fakePlan, turnsByEntryUuid, totalTurns: 100
+  });
+  // Should skip — Pass 2 will drop the entire turn anyway
+  assert.equal(stats.thinkingCondensed, 0);
+});

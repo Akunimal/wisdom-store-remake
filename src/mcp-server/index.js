@@ -50,7 +50,6 @@ import { handleCompactContext } from './tools/compact-context.js';
 import { handleAnnotateWisdom } from './tools/annotate-wisdom.js';
 import { handleInspectPrunedMessages } from './tools/inspect-pruned-messages.js';
 import { handleSandwichPrune } from './tools/sandwich-prune.js';
-import { handleAnalyzeForArchive } from './tools/analyze-for-archive.js';
 import { handleAnalyzeForArchiveV2 } from './tools/analyze-for-archive-v2.js';
 import { handleCondenseJsonlBlocks } from './tools/condense-jsonl-blocks.js';
 import { handleApplyArchivePlan } from './tools/apply-archive-plan.js';
@@ -515,40 +514,7 @@ const TOOLS = [
   },
   {
     name: 'analyze_for_archive',
-    description: 'Generate an LLM-driven archival trim plan for a Claude Code conversation JSONL. Calls Sonnet 4.6 (1M context, OAuth-billed against your Claude subscription by default) over a compact decision-skeleton of the conversation. Returns a planId + checksum that apply_archive_plan can later validate and execute. Use this when a long-running session needs aggressive trimming that distinguishes drop-this-tool-output (safe) from distill-this-failed-attempt (must summarize the lesson). Pairs with apply_archive_plan and restore_archive_backup. Reports cost.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        conversation_id: {
-          type: 'string',
-          description: 'Conversation UUID. If omitted, uses the most-recently-modified conversation for the current project.'
-        },
-        derivePurpose: {
-          type: 'boolean',
-          description: 'If true (default) and no purpose is supplied, run a Haiku pre-pass over user messages to derive a 3-5 sentence purpose summary used as context for the trim plan. ~$0.10 typical.',
-          default: true
-        },
-        purpose: {
-          type: 'string',
-          description: 'Optional explicit purpose statement (skips Haiku pre-pass when provided).'
-        },
-        allowApiKey: {
-          type: 'boolean',
-          description: 'Default false. By default this tool refuses to run if it cannot use OAuth (subscription billing). Set true to fall back to ANTHROPIC_API_KEY (your API budget) — explicit opt-in to avoid surprise charges.',
-          default: false
-        },
-        model: {
-          type: 'string',
-          enum: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
-          description: 'Planning model. Default haiku (cheaper ~4x AND uses separate rate-limit budget — runnable even when Sonnet is throttled). Use sonnet for higher-judgment runs if haiku distillations are observably weak on a given conversation type.',
-          default: 'claude-haiku-4-5-20251001'
-        }
-      }
-    }
-  },
-  {
-    name: 'analyze_for_archive_v2',
-    description: 'Two-pass turn-based archival planner. Pass 1: per-turn classify+summarize (Haiku, cacheable system prompt, concurrent). Pass 2: cross-turn judgment over the collected summaries (Haiku). Produces the same per-uuid plan format as v1, so apply_archive_plan/restore_archive_backup work unchanged. Designed to dodge v1\'s structural blockers (no cache lineage, big-burst rate caps). Use max_turns to sample-run before unleashing on a large session.',
+    description: 'Generate an LLM-driven archival trim plan for a Claude Code conversation JSONL. Two-pass architecture: Pass 1 classifies + summarizes each turn via Haiku (concurrent, cacheable system prompt, with heuristic pre-filter for obvious discardables); Pass 2 makes cross-turn keep/drop/distill decisions over the collected summaries. Produces a per-uuid plan that apply_archive_plan can validate and execute, and restore_archive_backup can undo. Bills against your Claude subscription via OAuth (Haiku rate budget — Sonnet bucket untouched). Use max_turns to sample-run before unleashing on a large session.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -589,8 +555,8 @@ const TOOLS = [
         },
         modes: {
           type: 'array',
-          items: { type: 'string', enum: ['images', 'memory-reads', 'identical-reads'] },
-          description: 'Which heuristics to apply. Default all three. images=base64 image content; memory-reads=older reads of MEMORY.md/CLAUDE.md/.wisdom/*; identical-reads=older reads with byte-identical content.'
+          items: { type: 'string', enum: ['images', 'memory-reads', 'identical-reads', 'thinking'] },
+          description: 'Which heuristics to apply. Default all (images, memory-reads, identical-reads, thinking). images=base64 image content; memory-reads=older reads of MEMORY.md/CLAUDE.md/.wisdom/*; identical-reads=older reads with byte-identical content; thinking=condense thinking blocks in older turns (uses v2 plan summaries when available, else heuristic last-paragraph fallback).'
         }
       }
     }
@@ -702,8 +668,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'sandwich_prune':
         return await handleSandwichPrune(args);
       case 'analyze_for_archive':
-        return await handleAnalyzeForArchive(args);
-      case 'analyze_for_archive_v2':
         return await handleAnalyzeForArchiveV2(args);
       case 'condense_jsonl_blocks':
         return await handleCondenseJsonlBlocks(args);
