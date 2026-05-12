@@ -29,9 +29,10 @@ import {
   readJsonlLine
 } from '../lib/jsonl.js';
 import { rewriteJsonl } from '../lib/jsonl-mutate.js';
-import { buildCondensePlan } from '../lib/jsonl-condense.js';
+import { buildCondensePlan, findMatchingV2Plan } from '../lib/jsonl-condense.js';
+import { segmentTurns } from '../lib/turn-segmenter.js';
 
-const VALID_MODES = new Set(['images', 'memory-reads', 'identical-reads']);
+const VALID_MODES = new Set(['images', 'memory-reads', 'identical-reads', 'thinking']);
 const BACKUP_RETENTION = 3;
 
 function pruneOldBackups(backupDir, convId) {
@@ -65,7 +66,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     }
     modes = args.modes;
   } else {
-    modes = [...VALID_MODES];
+    modes = [...VALID_MODES];  // default: all modes (including thinking)
   }
 
   const sizeBefore = fs.statSync(filePath).size;
@@ -81,9 +82,27 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     fullEntry: readJsonlLine(filePath, e.line) || e.data
   }));
 
-  const { replace, stats } = buildCondensePlan(chainFullEntries, { modes });
-  const totalCondensed = stats.imagesCondensed + stats.memoryReadsCondensed + stats.identicalReadsCondensed;
-  const totalBytesSaved = stats.imagesBytesSaved + stats.memoryReadsBytesSaved + stats.identicalReadsBytesSaved;
+  // For "thinking" mode, build turn segmentation + look up most recent v2 plan.
+  let extraOpts = {};
+  let planUsed = null;
+  let usingThinkingFallback = false;
+  if (modes.includes('thinking')) {
+    const turns = segmentTurns(chain, readJsonlLine, filePath);
+    const turnsByEntryUuid = new Map();
+    for (const t of turns) {
+      for (const e of t.entries) {
+        if (e.data.uuid) turnsByEntryUuid.set(e.data.uuid, { turn_id: t.turn_id, totalTurns: turns.length });
+      }
+    }
+    const lastUuid = chain[chain.length - 1].data.uuid;
+    planUsed = findMatchingV2Plan(filePath, chain.length, lastUuid);
+    usingThinkingFallback = !planUsed;
+    extraOpts = { plan: planUsed, turnsByEntryUuid, totalTurns: turns.length };
+  }
+
+  const { replace, stats } = buildCondensePlan(chainFullEntries, { modes, ...extraOpts });
+  const totalCondensed = stats.imagesCondensed + stats.memoryReadsCondensed + stats.identicalReadsCondensed + (stats.thinkingCondensed || 0);
+  const totalBytesSaved = stats.imagesBytesSaved + stats.memoryReadsBytesSaved + stats.identicalReadsBytesSaved + (stats.thinkingBytesSaved || 0);
 
   if (totalCondensed === 0) {
     return {
@@ -102,6 +121,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     `- Images: ${stats.imagesCondensed} blocks, ~${(stats.imagesBytesSaved/1024).toFixed(0)} KB`,
     `- Memory-style reads: ${stats.memoryReadsCondensed} blocks, ~${(stats.memoryReadsBytesSaved/1024).toFixed(0)} KB`,
     `- Identical-content reads: ${stats.identicalReadsCondensed} blocks, ~${(stats.identicalReadsBytesSaved/1024).toFixed(0)} KB`,
+    modes.includes('thinking') ? `- Thinking blocks: ${stats.thinkingCondensed || 0} blocks, ~${((stats.thinkingBytesSaved||0)/1024).toFixed(0)} KB${usingThinkingFallback ? ' ⚠️ (heuristic last-paragraph fallback — no v2 plan found)' : ` (using v2 plan ${planUsed?.planId?.slice(0,8) || ''}...)`}` : '',
     `- **Total**: ${totalCondensed} blocks, ~${(totalBytesSaved/1024).toFixed(0)} KB raw content (file size will drop less due to JSON overhead)`,
     ``
   ];
