@@ -534,6 +534,12 @@ const TOOLS = [
           type: 'boolean',
           description: 'Default false. By default this tool refuses to run if it cannot use OAuth (subscription billing). Set true to fall back to ANTHROPIC_API_KEY (your API budget) — explicit opt-in to avoid surprise charges.',
           default: false
+        },
+        model: {
+          type: 'string',
+          enum: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
+          description: 'Planning model. Default haiku (cheaper ~4x AND uses separate rate-limit budget — runnable even when Sonnet is throttled). Use sonnet for higher-judgment runs if haiku distillations are observably weak on a given conversation type.',
+          default: 'claude-haiku-4-5-20251001'
         }
       }
     }

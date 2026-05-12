@@ -118,16 +118,25 @@ export function getAnthropicClient({ allowApiKey = false } = {}) {
  */
 export const PRICING = {
   'claude-sonnet-4-6': { in: 3.00, out: 15.00 },
+  // Sonnet 4.6 1M context tier — kicks in when input >200K tokens. Anthropic
+  // bills the entire request at this rate, not just the >200K portion.
+  'claude-sonnet-4-6:1m': { in: 6.00, out: 22.50 },
   'claude-haiku-4-5-20251001': { in: 0.80, out: 4.00 }
 };
 
 export function formatCost(model, inputTokens, outputTokens) {
-  const p = PRICING[model];
-  if (!p) return `${inputTokens} in / ${outputTokens} out (model ${model} not in price table)`;
+  // Auto-promote to 1M-tier pricing when Sonnet inputs cross 200K.
+  let key = model;
+  if (model === 'claude-sonnet-4-6' && inputTokens > 200_000) key = 'claude-sonnet-4-6:1m';
+  const p = PRICING[key];
+  if (!p) return `${inputTokens} in / ${outputTokens} out (model ${key} not in price table)`;
   const inCost = (inputTokens / 1_000_000) * p.in;
   const outCost = (outputTokens / 1_000_000) * p.out;
   const total = inCost + outCost;
-  const inK = (inputTokens / 1000).toFixed(1) + 'k';
-  const outK = (outputTokens / 1000).toFixed(1) + 'k';
-  return `$${total.toFixed(2)} — ${inK} in / ${outK} out`;
+  // Cost: 4 decimals when total < $0.01 so small calls don't render as "$0.00".
+  const dollars = total < 0.01 ? `$${total.toFixed(4)}` : `$${total.toFixed(2)}`;
+  // Tokens: raw for <1000, two-decimal-K otherwise — preserves precision on tiny calls
+  // ("9 in / 4 out") and stays readable on large ones ("19.00k in / 5.00k out").
+  const fmtTok = (n) => n < 1000 ? `${n}` : `${(n / 1000).toFixed(2)}k`;
+  return `${dollars} — ${fmtTok(inputTokens)} in / ${fmtTok(outputTokens)} out (${key})`;
 }
