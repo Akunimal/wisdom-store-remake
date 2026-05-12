@@ -42,7 +42,7 @@ import { preFilterTurn } from '../lib/turn-prefilter.js';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const SONNET_MODEL = 'claude-sonnet-4-6';
-const PLAN_TTL_MS = 60 * 60 * 1000;
+const PLAN_TTL_MS = 24 * 60 * 60 * 1000;  // 24h — 1h was too short for real deliberation
 const PASS1_CONCURRENCY = 5;
 const PASS1_BACKOFF_INITIAL_MS = 2000;
 const PASS1_BACKOFF_MAX_MS = 60_000;
