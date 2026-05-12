@@ -42,10 +42,16 @@ test('buildCondensePlan: identical-reads mode marks older reads of same path', (
   assert.equal(stats.identicalReadsCondensed, 1, 'should condense the older read (r1)');
   assert.ok(replace.has('r1'), 'older read uuid should be in replace map');
   assert.ok(!replace.has('r2'), 'newer read should not be condensed');
-  // Marker text contains expected hints
+  // Entry-top-level metadata (allowed). Block content is API-clean (no extra fields).
   const newR1 = replace.get('r1');
+  assert.equal(newR1._condensed, true, 'entry-level _condensed flag should be set');
+  assert.equal(newR1._condenseSource, 'identical-reads');
   const newBlock = newR1.message.content[0];
-  assert.ok(newBlock._condensed === true);
+  // Block must NOT have metadata fields (Anthropic API rejects extra keys)
+  assert.equal(newBlock._condensed, undefined, 'block-level metadata must be stripped (API rejects extra keys)');
+  assert.equal(newBlock._condenseSource, undefined);
+  // Marker text content
+  assert.ok(typeof newBlock.content === 'string');
   assert.ok(newBlock.content.includes('byte-identical'));
 });
 
