@@ -981,3 +981,71 @@ Each strategy's ⓘ opens a popover with the same content from the "Pre-bundled 
 **Secondary (one click away):** advanced settings, recent runs.
 **Right amount of control. No tabs.**
 
+
+---
+
+# Strategy stats from logs (decision-support overlay)
+
+Per-strategy "average savings across N runs" shown ON the strategy cards. Pulled from `.condense-log/<convId>.jsonl` files aggregated across ALL sessions. Free to compute (just scan + count).
+
+## Updated card display
+
+```
+   ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐
+   │  🛡 Safe & Free  ⓘ │  │ ⚖ Default        ⓘ │  │ 🧠 Deep          ⓘ │
+   │                    │  │  ★ recommended     │  │                    │
+   │  5 modes, no LLM   │  │  All 8, no LLM     │  │  All 8 + ~$0.50    │
+   │  Zero risk         │  │  Best balance      │  │  LLM judgment      │
+   │  ~2-10% AC saved   │  │  ~10-25% AC saved  │  │  ~30-50% AC saved  │
+   │ ─────────────────  │  │ ─────────────────  │  │ ─────────────────  │
+   │ Your avg: 6% (8 ru)│  │ Your avg: 19% (12) │  │ Your avg: 38% (3)  │
+   └────────────────────┘  └────────────────────┘  └────────────────────┘
+```
+
+The "Your avg: X% (N ru)" line is the empirical observed reduction across N runs you've actually executed with that strategy. Helps the user calibrate against their own real-world results, not just my brief's "typical impact" estimates.
+
+## Computation
+
+Backend endpoint: `GET /api/strategy-stats`
+
+Returns:
+```json
+{
+  "safe":    { "runs": 8,  "avgFileReductionPct": 6.3, "avgBlocksTouched": 12, "totalBytesSaved": 124816 },
+  "default": { "runs": 12, "avgFileReductionPct": 18.7, "avgBlocksTouched": 187, "totalBytesSaved": 4231552 },
+  "deep":    { "runs": 3,  "avgFileReductionPct": 38.4, "avgBlocksTouched": 412, "totalBytesSaved": 1842339 },
+  "custom":  { "runs": 5,  "avgFileReductionPct": 14.2, "avgBlocksTouched": 47,  "totalBytesSaved": 234521 }
+}
+```
+
+How the backend classifies each log entry into a strategy bucket:
+1. Walk `~/.claude/projects/*/.condense-log/*.jsonl`
+2. For each entry, check `entry.modes`:
+   - **Safe** = exactly `['images', 'memory-reads', 'identical-reads', 'stale-reads', 'mcp-snapshots']` (the 5 zero-risk subset)
+   - **Default** = exactly all 8 (heuristic only)
+   - **Deep** = all 8 PLUS the entry has `planUsed != null` (means analyze ran first)
+   - **Custom** = anything else (user picked a non-preset combination)
+3. Compute `(fileSize.before - fileSize.after) / fileSize.before * 100` per entry, then average per bucket
+
+## Optional: empty-state messaging
+
+If the user has run < 3 of any strategy, show "Your avg: — (X runs)" so it doesn't lie with small samples. Or hide the line entirely until ≥ 3 runs of that strategy.
+
+## Future extension (skip for v1)
+
+Could also show:
+- **Median** alongside average (handles outliers like one massive 6MB session that skews the mean)
+- **Best-result session** ("Your biggest save: 51% on claude-loop120, 8 hours ago")
+- **Cross-user benchmarks** if dashboard ever shares stats across machines
+- **Trend line** ("Default has saved you 1.2 MB total this week")
+
+Skip these for the first cut. Per-strategy avg is the decision-support primitive that matters.
+
+## Implementation effort
+
+- Backend endpoint scanning + aggregation: ~30-45 min (just file walk + JSON parse + math)
+- UI integration on the cards: ~15 min (add one line to each card template)
+- Tooltip on the avg line explaining "based on YOUR runs, not synthetic estimates": optional polish
+
+**Total: ~1 hour additional on top of the base widget.**
+
