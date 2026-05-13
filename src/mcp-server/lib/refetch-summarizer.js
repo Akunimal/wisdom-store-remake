@@ -273,6 +273,93 @@ CORRECT OUTPUT:
 List of 5 workers from orchestrator. Active: loop170 (iq-feedback-widget), loop171 (repairop-iq-integration), loop173 (iq-group-management-ui). Idle: loop172. Completed: loop174 (reactions-research). Most recent activity: loop173 at 18:32.
 
 ═══════════════════════════════════════════════════════════════════
+EXAMPLE 9 — Stack trace / tool error
+
+Tool: Bash
+Args: { "command": "node scripts/migrate-user-logs.js --batch-size 1000" }
+Content (90 lines):
+[migrate] Starting batch migration: source=couchdb dest=postgres batch=1000
+[migrate] Fetched 47832 records from CouchDB user_logs
+[migrate] Beginning Postgres insert in batches of 1000...
+[migrate] Batch 1/48 complete (1000 inserted, 0 errors)
+[migrate] Batch 2/48 complete (1000 inserted, 0 errors)
+[migrate] Batch 3/48 ERROR
+TypeError: Cannot read properties of undefined (reading 'event_type')
+    at processRecord (/scripts/migrate-user-logs.js:142:18)
+    at processBatch (/scripts/migrate-user-logs.js:89:23)
+    at async main (/scripts/migrate-user-logs.js:34:5)
+    at async /scripts/migrate-user-logs.js:18:1
+[migrate] Aborting on first error to preserve idempotence guarantee
+[migrate] State written to /tmp/migrate-state-2026-05-12T14-23.json (resume-safe)
+
+CORRECT OUTPUT:
+Batch migration script \`migrate-user-logs.js\` failed at batch 3/48 (after 2000/47832 records inserted). TypeError on processRecord (line 142): \`Cannot read properties of undefined (reading 'event_type')\` — input record missing event_type field. State saved to /tmp/migrate-state-2026-05-12T14-23.json for resume.
+
+═══════════════════════════════════════════════════════════════════
+EXAMPLE 10 — Git diff output
+
+Tool: Bash
+Args: { "command": "git diff HEAD~1 HEAD" }
+Content (220 lines):
+diff --git a/src/auth/refreshToken.js b/src/auth/refreshToken.js
+index abc1234..def5678 100644
+--- a/src/auth/refreshToken.js
++++ b/src/auth/refreshToken.js
+@@ -10,6 +10,11 @@ export async function refreshToken(rawToken, opts = {}) {
+   if (!rawToken) throw new Error('TOKEN_MISSING');
+   const decoded = jwt.verify(rawToken, getKey(opts.kid));
++  // P1 fix (loop151 task #34): validate exp BEFORE re-issuing
++  // Previously refreshToken happily issued new tokens for already-expired
++  // refresh tokens, defeating revocation windows. Test added.
++  if (decoded.exp * 1000 < Date.now()) throw new Error('TOKEN_EXPIRED');
++
+   const parsed = TokenSchema.parse(decoded);
+   if (parsed.exp * 1000 < Date.now()) throw new Error('TOKEN_EXPIRED');
+   return issueToken({ sub: decoded.sub, scope: decoded.scope }, opts);
+
+diff --git a/src/auth/__tests__/refreshToken.test.js b/src/auth/__tests__/refreshToken.test.js
+index zxy9876..wvu5432 100644
+--- a/src/auth/__tests__/refreshToken.test.js
++++ b/src/auth/__tests__/refreshToken.test.js
+@@ -42,6 +42,12 @@ describe('refreshToken', () => {
++  it('rejects expired refresh tokens before re-issuing', async () => {
++    const expired = makeExpiredToken();
++    await expect(refreshToken(expired)).rejects.toThrow('TOKEN_EXPIRED');
++  });
+
+CORRECT OUTPUT:
+Diff HEAD~1..HEAD across 2 files. src/auth/refreshToken.js: +5 lines adding TOKEN_EXPIRED check before re-issuing (P1 fix per loop151 task #34 — closes revocation-window gap). src/auth/__tests__/refreshToken.test.js: +6 lines adding \`rejects expired refresh tokens\` test.
+
+═══════════════════════════════════════════════════════════════════
+EXAMPLE 11 — Read of long config / data file (truncated to first ~100 lines)
+
+Tool: Read
+Args: { "file_path": "/home/michael/InfiniQuest/backend/data/seed-users.json" }
+Content (~8KB, 380 lines):
+[
+  {
+    "userId": "user-1a2b-3c4d",
+    "email": "alice@example.com",
+    "displayName": "Alice Anderson",
+    "role": "admin",
+    "createdAt": "2025-01-15T08:30:00Z",
+    "preferences": { "theme": "dark", "notifications": true }
+  },
+  {
+    "userId": "user-2b3c-4d5e",
+    "email": "bob@example.com",
+    "displayName": "Bob Brown",
+    "role": "member",
+    "createdAt": "2025-02-20T14:15:00Z",
+    "preferences": { "theme": "light", "notifications": false }
+  },
+  ... (44 more user objects, similar shape) ...
+]
+
+CORRECT OUTPUT:
+JSON seed-users data at /home/michael/InfiniQuest/backend/data/seed-users.json. Array of ~46 user objects with shape {userId, email, displayName, role, createdAt, preferences}. Roles include admin (Alice) and member (Bob); preferences cover theme + notifications opt-in. Used as backend test/seed data.
+
+═══════════════════════════════════════════════════════════════════
 
 GENERAL RULES:
 

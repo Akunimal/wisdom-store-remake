@@ -96,6 +96,7 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     fullEntry: readJsonlLine(filePath, e.line) || e.data
   }));
 
+  const sidecar = loadCondenseMeta(filePath);
   // LLM-summary pre-pass (when summarize_with_llm: true AND refetch-markers in modes)
   // Builds a uuid:blockIdx → summary map to pass into buildCondensePlan.
   let refetchSummariesByUuid = null;
@@ -175,7 +176,6 @@ export async function handleCondenseJsonlBlocks(args = {}) {
     extraOpts = { plan: planUsed, turnsByEntryUuid, totalTurns: turns.length, thinkingMarkerStyle: args.thinking_marker_style || 'minimal', keepRecentTurns: args.keep_recent_turns, refetchSummariesByUuid };
   }
 
-  const sidecar = loadCondenseMeta(filePath);
   const { replace, stats } = buildCondensePlan(chainFullEntries, { modes, ...extraOpts, sidecar });
   const totalCondensed = stats.imagesCondensed + stats.memoryReadsCondensed + stats.identicalReadsCondensed + (stats.thinkingCondensed || 0) + (stats.staleReadsCondensed || 0) + (stats.mcpSnapshotsCondensed || 0) + (stats.refetchMarkersCondensed || 0) + (stats.toolArgsCondensed || 0);
   const totalBytesSaved = stats.imagesBytesSaved + stats.memoryReadsBytesSaved + stats.identicalReadsBytesSaved + (stats.thinkingBytesSaved || 0) + (stats.staleReadsBytesSaved || 0) + (stats.mcpSnapshotsBytesSaved || 0) + (stats.refetchMarkersBytesSaved || 0) + (stats.toolArgsBytesSaved || 0);
