@@ -1143,3 +1143,23 @@ If you haven't started yet:
 - Default ★ as "richer markers via Haiku" if you're comfortable with $0.30/run as the recommendation
 
 Either way, no architectural changes needed — just one new arg + one toggle/label.
+
+---
+
+# Anthropic Rate-Limit Budget Notes (for cost UI design)
+
+The cost numbers in this brief are **dollars-equivalent**, but the user-relevant metric on Max subscription is **rate-limit window consumption**. The budget structure:
+
+- **4hr all-models window** — shared budget for Haiku + Opus + Sonnet API calls. ALL model usage counts here.
+- **Sonnet additional hard cap** — Sonnet ALSO has its own per-model limit on top. Sonnet calls count against BOTH budgets and fail-fast on whichever is tighter.
+- Haiku and Opus only count against the 4hr all-models window.
+
+**Implications for the dashboard:**
+- Show "% of 4hr window consumed" alongside $ cost — it's the more actionable metric for Max users
+- Heavy LLM-summary use (Haiku) competes with active Opus session work in the same window
+- The "Deep" strategy (uses Sonnet for analyze) is double-constrained — show that warning explicitly
+- Consider a "schedule for off-peak" option that defers condense to when window has recovered (e.g., overnight)
+- Pre-flight estimate on the GO button could show "this will consume ~X% of your remaining 4hr budget" if dashboard knows current usage
+
+**Empirical from real session:** the loop151 LLM-summary run consumed ~4-5% of Mike's 4hr window for a $0.30 condense. That's a real chunk if you have multiple active Opus sessions doing work.
+
