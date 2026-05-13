@@ -384,12 +384,13 @@ Args: ${JSON.stringify(toolArgs || {})}
 Content (${content.length} chars; YOUR SUMMARY MUST BE ≤${targetMaxChars} CHARS — half the original or less):
 ${content.slice(0, 25000)}${content.length > 25000 ? '\n... [content truncated for prompt size; original is ' + content.length + ' chars] ...' : ''}`;
 
-  // Dynamic max_tokens: give Haiku room for ~50% of original content
-  // (the budget the prompt asks for) + ~50 token padding for natural
-  // sentence completion. Floor at 80 tokens (smallest useful summary).
-  // Cap at 500 (sanity ceiling — anything more probably means content
-  // wasn't summarizable to start with).
-  const dynMaxTokens = Math.max(80, Math.min(500, Math.ceil(content.length * 0.5 / 4) + 50));
+  // Dynamic max_tokens: prompt asks for ≤50% of original, but AIs aren\'t
+  // great at counting chars exactly. Give Haiku ~70% budget + 100 token
+  // padding so it can FINISH its sentence rather than getting cut off
+  // mid-thought. Net markers might occasionally be 60-65% of original
+  // instead of 50%, but always smaller and never truncated.
+  // Floor 80 tokens (smallest useful summary). Cap 600 (~2.4KB output).
+  const dynMaxTokens = Math.max(80, Math.min(600, Math.ceil(content.length * 0.7 / 4) + 100));
   try {
     const resp = await client.messages.create({
       model: HAIKU_MODEL,
