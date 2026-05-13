@@ -384,10 +384,16 @@ Args: ${JSON.stringify(toolArgs || {})}
 Content (${content.length} chars; YOUR SUMMARY MUST BE ≤${targetMaxChars} CHARS — half the original or less):
 ${content.slice(0, 25000)}${content.length > 25000 ? '\n... [content truncated for prompt size; original is ' + content.length + ' chars] ...' : ''}`;
 
+  // Dynamic max_tokens: give Haiku room for ~50% of original content
+  // (the budget the prompt asks for) + ~50 token padding for natural
+  // sentence completion. Floor at 80 tokens (smallest useful summary).
+  // Cap at 500 (sanity ceiling — anything more probably means content
+  // wasn't summarizable to start with).
+  const dynMaxTokens = Math.max(80, Math.min(500, Math.ceil(content.length * 0.5 / 4) + 50));
   try {
     const resp = await client.messages.create({
       model: HAIKU_MODEL,
-      max_tokens: 250,
+      max_tokens: dynMaxTokens,
       system: [{ type: 'text', text: LLM_SUMMARY_SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userPrompt }]
     });
