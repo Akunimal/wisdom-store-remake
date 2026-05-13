@@ -273,6 +273,23 @@ CORRECT OUTPUT:
 List of 5 workers from orchestrator. Active: loop170 (iq-feedback-widget), loop171 (repairop-iq-integration), loop173 (iq-group-management-ui). Idle: loop172. Completed: loop174 (reactions-research). Most recent activity: loop173 at 18:32.
 
 ═══════════════════════════════════════════════════════════════════
+EXAMPLE 8b — Grep output with line numbers (PRESERVE the line numbers!)
+
+Tool: Grep
+Args: { "pattern": "function processRefund", "path": "/src", "output_mode": "content", "-n": true }
+Content (15 lines):
+/src/payments/refunds.js:142:export async function processRefund(orderId, amount, opts = {}) {
+/src/payments/refunds.js:189:async function processRefundWithRetry(orderId, amount, opts) {
+/src/payments/__tests__/refunds.test.js:23:  describe('processRefund', () => {
+/src/payments/__tests__/refunds.test.js:67:  describe('processRefund edge cases', () => {
+/src/payments/__tests__/refunds.test.js:145:  describe('processRefund + saga', () => {
+/src/admin/handlers/refund-handler.js:34:  // Wraps processRefund with admin audit log
+/src/admin/handlers/refund-handler.js:51:  const refundResult = await processRefund(req.body.orderId, req.body.amount, opts);
+
+CORRECT OUTPUT:
+Grep "function processRefund" matched 7 lines: /src/payments/refunds.js (L142 export, L189 retry-wrapper); /src/payments/__tests__/refunds.test.js (L23, L67, L145 — three describe blocks); /src/admin/handlers/refund-handler.js (L34 comment + L51 admin-audit wrapper call). PRESERVE line numbers verbatim — they are addresses for follow-up Read({offset:N}) calls.
+
+═══════════════════════════════════════════════════════════════════
 EXAMPLE 9 — Stack trace / tool error
 
 Tool: Bash
@@ -371,6 +388,7 @@ GENERAL RULES:
 - For test/error output: name the failure + its specific error message.
 - For DB results: row count, column names, range/median of any numeric columns.
 - For lists: count + identifying details of first/last + any notable groupings.
+- For grep/search results with N: line-number prefixes (grep -n format) or path:N:content patterns: PRESERVE the actual line numbers in your summary. They are addresses for follow-up Read calls; losing them costs an extra tool call to re-grep.
 - For code: file role + main exports/functions + relevant imports.
 - For configs: top-level keys + key values that look load-bearing.
 - For markdown plans: phase/step structure + acceptance criteria if present.

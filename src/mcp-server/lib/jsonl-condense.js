@@ -103,14 +103,13 @@ const TOOL_ARGS_PREVIEW_CHARS = 100;
 const TOOL_ARGS_FIELDS = {
   'TaskCreate': ['description'],
   'mcp__orchestrator__create_session': ['initialTask'],
-  'mcp__orchestrator__assign_task': ['task'],
-  // File-edit tools — old_string/new_string are the diff content. Per Mike\'s
-  // guidance: diffs recoverable from git, OK to lose the bytes here. The
-  // file_path is preserved structurally; agent can re-Read for current state.
-  'Edit': ['old_string', 'new_string'],
-  'Write': ['content'],
-  'mcp__codegen__manualFileEdit': ['old_string', 'new_string'],
-  'mcp__codegen__manualFileWrite': ['content']
+  'mcp__orchestrator__assign_task': ['task']
+  // NOTE: Edit/Write/manualFileEdit/manualFileWrite REMOVED per loop16 field
+  // report (2026-05-12). Their old_string/new_string args are the canonical
+  // record of what was edited in the chain — not reliably recoverable from git
+  // (mid-task, uncommitted) and not re-fetchable from anywhere live. Same class
+  // as the tool_use/tool_result orphan catch in commit dfd3bca: structured tool
+  // I/O needs special handling, not blanket condensation.
 };
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?)$/i;
