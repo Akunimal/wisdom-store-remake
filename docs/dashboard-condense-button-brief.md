@@ -52,7 +52,7 @@ Minimum viable button:
 - **Dry-run option** (checkbox): run in preview mode first, show predicted savings, ask user to confirm before mutating
 
 Optional power-user controls:
-- **Mode selection** (multi-select checklist of the 7 modes)
+- **Mode selection** (multi-select checklist of the 8 modes (see Appendix for full table))
 - **`thinking_marker_style`**: `minimal` (default, byte-efficient) or `verbose` (embeds Pass 1 turn summaries when an analyze-v2 plan exists)
 - **`keep_recent_turns`**: integer override; default is `min(30, ceil(totalTurns/2))` — keep the most recent N turns verbatim
 - **Re-run button** to re-trigger with same params (idempotent — sidecar prevents double-condensing)
@@ -141,7 +141,7 @@ POST /api/condense
 {
   "conversation_id": "...",   // optional, look up via dashboard's session map
   "jsonl_path": "...",        // OR explicit path
-  "modes": [...],             // optional, default = all 7
+  "modes": [...],             // optional, default = all 8
   "dry_run": false,           // optional, default false
   "thinking_marker_style": "minimal"
 }
