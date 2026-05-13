@@ -365,6 +365,7 @@ GENERAL RULES:
 
 - Output the SUMMARY ONLY — no preamble, no "Here's a summary", no quotation marks around it.
 - 2-3 sentences max. Densely packed with concrete identifiers.
+- **Length budget: summary should be ≤50% of original content size.** The user prompt tells you the original size in chars. If you're summarizing a 700-char Bash result, your summary should be ≤350 chars. If you're summarizing a 6000-char file, ≤3000 chars (you have room). For SMALL content (under ~1KB), aim for the tightest summary possible — a 100-char summary of a 600-char Bash output is fine and preferred over a verbose one. Density per character matters more than completeness on small inputs.
 - Lead with the content type / file purpose, then key facts/structure.
 - Preserve: file paths, function/class names, error messages, key data values, decisions, counts/totals.
 - For test/error output: name the failure + its specific error message.
@@ -377,9 +378,10 @@ GENERAL RULES:
 When in doubt: imagine an agent reading just this 2-3 sentence summary — what's the minimum it needs to know to either (a) act correctly without re-fetching, or (b) realize it needs to re-fetch?`;
 
 export async function summarizeContentWithHaiku(client, { toolName, toolArgs, content }) {
+  const targetMaxChars = Math.floor(content.length / 2);
   const userPrompt = `Tool: ${toolName}
 Args: ${JSON.stringify(toolArgs || {})}
-Content (${content.length} chars):
+Content (${content.length} chars; YOUR SUMMARY MUST BE ≤${targetMaxChars} CHARS — half the original or less):
 ${content.slice(0, 25000)}${content.length > 25000 ? '\n... [content truncated for prompt size; original is ' + content.length + ' chars] ...' : ''}`;
 
   try {
