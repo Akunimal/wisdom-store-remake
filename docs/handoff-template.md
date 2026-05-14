@@ -39,6 +39,8 @@ Send this to the session as a user message (verbatim, or with light prefacing li
 >
 > End with a `### Considered Omitting` section: things you almost cut but kept just in case. This is the safety net — if next-session-you thinks the hand-off is missing something, they'll glance here before grepping the orphaned transcript.
 >
+> Before finalizing, re-read your own draft and ask: would future-me, with no in-process memory of how this work happened, be confused or need to grep? Watch specifically for: shared credentials that may rotate (don't reuse what you see in older context), task-scoped rules being read as session-scoped (e.g. "don't commit" was the brief, not a standing rule), references to artifacts (backups, temp files) that no longer exist on disk. Fix any gaps in-place.
+>
 > Trust your judgment on structure. Keep it concrete and file-path-anchored.
 
 ## Dashboard automation hook (claudeLoop)
