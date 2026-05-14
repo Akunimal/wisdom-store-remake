@@ -962,7 +962,43 @@ export async function handleAnalyzeForArchiveV2(args = {}) {
     `Next: \`apply_archive_plan({ planId: "${planId}", checksum: "${checksum}", confirm: true })\` (works unchanged with v2 plans).`,
   ].filter(l => l !== '').join('\n');
 
-  return { content: [{ type: 'text', text: lines }] };
+  return {
+    content: [{ type: 'text', text: lines }],
+    structuredContent: {
+      planId,
+      checksum,
+      planPath,
+      jsonlPath: filePath,
+      jsonlMessages: chain.length,
+      lastMessageUuid,
+      schemaVersion: 'v2-two-pass',
+      summary: {
+        turnsTotal: allTurns.length,
+        turnsProcessed: turnsToProcess.length,
+        turnKept,
+        turnDropped,
+        turnDistilled,
+        turnUnknown,
+        perUuidDropCount: dropCount,
+        perUuidDistillCount: distillCount,
+        perUuidKeepCount: chain.length - dropCount - distillCount
+      },
+      cost: {
+        purpose: purposeCost || null,
+        pass1: pass1CostStr,
+        pass2: pass2CostStr,
+        cacheReadTokens: pass1Usage.cache_read_input_tokens,
+        cacheWriteTokens: pass1Usage.cache_creation_input_tokens
+      },
+      pass2Error: pass2Error || null,
+      pass1FailedTurns: pass1Failed.length,
+      prefilteredCount,
+      // Hint for the next API call
+      nextStep: pass2Error
+        ? null
+        : { tool: 'apply_archive_plan', args: { planId, checksum, confirm: true } }
+    }
+  };
 }
 
 export const V2_INTERNALS = { canonicalStringify, archiveDirsFor, PASS1_SYSTEM, PASS2_SYSTEM_DEFAULT, PASS2_SYSTEM_AGGRESSIVE };
