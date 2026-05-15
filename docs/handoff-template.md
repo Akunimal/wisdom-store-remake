@@ -39,6 +39,8 @@ Send this to the session as a user message (verbatim, or with light prefacing li
 >
 > End with a `### Considered Omitting` section: things you almost cut but kept just in case. This is the safety net — if next-session-you thinks the hand-off is missing something, they'll glance here before grepping the orphaned transcript.
 >
+> If a prior hand-off is in your chain context (because the workflow has run before), don't let recency dominate. Read the prior hand-off and explicitly decide which of its items are still load-bearing — settled decisions, file pointers, fleet/coordination context, working-style notes — and carry them forward. Recent work is naturally salient; durable context from prior generations is what most easily drops out.
+>
 > Before finalizing, re-read your own draft and ask: would future-me, with no in-process memory of how this work happened, be confused or need to grep? Watch for things future-you would mistake for live state — shared secrets that may have rotated, rules from this task being read as standing session rules, references to files or artifacts that no longer exist. Fix any gaps in-place.
 >
 > Trust your judgment on structure. Keep it concrete and file-path-anchored.
