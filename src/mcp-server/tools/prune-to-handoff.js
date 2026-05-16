@@ -59,6 +59,16 @@ export async function handlePruneToHandoff(args = {}) {
   const keepRecentNExtra = Number.isInteger(args.keep_recent_n_extra) && args.keep_recent_n_extra > 0
     ? args.keep_recent_n_extra
     : 0;
+  // Cluster-merge: when a session writes the hand-off then later writes an
+  // addendum (e.g. "## SESSION HANDOFF — Addendum"), both messages match the
+  // marker. Default behavior anchors the cluster — walk back from the newest
+  // marker, gathering adjacent marker-bearing assistant messages within
+  // merge_window turns, and anchor before the OLDEST one. Opt out for the
+  // supersede pattern (newest hand-off should fully replace the older one).
+  const mergeHandoffCluster = args.merge_handoff_cluster !== false; // default true
+  const mergeWindow = Number.isInteger(args.merge_window) && args.merge_window > 0
+    ? args.merge_window
+    : 10;
 
   const entries = readJsonl(filePath);
   const chain = walkChain(entries);
@@ -110,9 +120,35 @@ export async function handlePruneToHandoff(args = {}) {
     };
   }
 
-  // Walk back from the marker to find the nearest user message — that becomes
-  // the new chain root, so next session sees [user: prompt for handoff] →
-  // [assistant: handoff] as its starting context.
+  // Cluster expansion: walk back from the newest marker, including additional
+  // marker-bearing assistant messages within merge_window turns. Each found
+  // marker resets the search window from its position (transitive expansion),
+  // so a chain of addendums spread across multiple turns gets fully captured
+  // as long as no gap exceeds merge_window.
+  const newestMarkerIdx = markerIdx;
+  const clusterMarkerIndices = [newestMarkerIdx];
+  if (mergeHandoffCluster && markerIdx > 0) {
+    let stopAt = Math.max(0, markerIdx - mergeWindow);
+    let scanIdx = markerIdx - 1;
+    while (scanIdx >= stopAt) {
+      const full = readJsonlLine(filePath, chain[scanIdx].line);
+      if (full && full.type === 'assistant') {
+        const text = getMessageContent({ data: full });
+        if (text && markerHeadingRegex.test(text)) {
+          markerIdx = scanIdx;
+          clusterMarkerIndices.push(scanIdx);
+          stopAt = Math.max(0, scanIdx - mergeWindow);
+        }
+      }
+      scanIdx--;
+    }
+  }
+  const oldestMarkerIdx = markerIdx;
+
+  // Walk back from the OLDEST marker in the cluster to find the nearest user
+  // message — that becomes the new chain root, so next session sees
+  // [user: prompt for handoff] → [assistant: handoff] → … → [addendum] as
+  // its starting context.
   let anchorIdx = -1;
   let anchorEntry = null;
   let anchorFull = null;
@@ -188,28 +224,33 @@ export async function handlePruneToHandoff(args = {}) {
   const bufferLine = keepRecentNExtra > 0
     ? `**Buffer**: requested keep_recent_n_extra=${keepRecentNExtra}, applied=${bufferAppliedCount} (primary anchor was chain idx ${primaryAnchorIdx + 1}, anchor walked back to ${anchorIdx + 1})`
     : null;
+  const clusterLine = clusterMarkerIndices.length > 1
+    ? `**Hand-off cluster**: ${clusterMarkerIndices.length} marker-bearing assistant messages merged (chain idxs ${clusterMarkerIndices.slice().reverse().map(i => i + 1).join(', ')}). Anchored before the oldest so all are kept in chain. Disable with merge_handoff_cluster=false for supersede semantics.`
+    : null;
+  const reportLines = (lines) => lines.filter(l => l !== null);
 
   if (dryRun) {
     return {
       content: [{
         type: 'text',
-        text: [
+        text: reportLines([
           `## Prune to Hand-off — DRY RUN`,
           ``,
           `**File**: \`${filePath}\``,
-          `**Marker**: \`${marker}\` found at chain index ${markerIdx + 1} of ${chain.length}`,
+          `**Marker**: \`${marker}\` newest match at chain index ${newestMarkerIdx + 1} of ${chain.length}${oldestMarkerIdx !== newestMarkerIdx ? ` (oldest in cluster: ${oldestMarkerIdx + 1})` : ''}`,
           `**New chain root**: chain index ${anchorIdx + 1} (${anchorType})`,
-          ...(bufferLine ? [bufferLine] : []),
+          clusterLine,
+          bufferLine,
           `**Would orphan**: ${orphanedCount} of ${chain.length} messages (~${orphanedTokens.toLocaleString()} tokens)`,
           `**Would keep**: ${keptCount} messages from anchor to leaf`,
           ``,
-          `### Hand-off snippet`,
+          `### Hand-off snippet (oldest in cluster)`,
           `\`\`\``,
           snippet,
           `\`\`\``,
           ``,
           `Run again with \`dry_run: false\` (or omit) to apply.`
-        ].join('\n')
+        ]).join('\n')
       }]
     };
   }
@@ -222,13 +263,14 @@ export async function handlePruneToHandoff(args = {}) {
   return {
     content: [{
       type: 'text',
-      text: [
+      text: reportLines([
         `## Prune to Hand-off Complete`,
         ``,
         `**File**: \`${filePath}\``,
-        `**Marker**: \`${marker}\` matched at chain index ${markerIdx + 1} of ${chain.length}`,
+        `**Marker**: \`${marker}\` newest match at chain index ${newestMarkerIdx + 1} of ${chain.length}${oldestMarkerIdx !== newestMarkerIdx ? ` (oldest in cluster: ${oldestMarkerIdx + 1})` : ''}`,
         `**New chain root**: chain index ${anchorIdx + 1} (${anchorType})`,
-        ...(bufferLine ? [bufferLine] : []),
+        clusterLine,
+        bufferLine,
         `**Messages orphaned**: ${orphanedCount} (~${orphanedTokens.toLocaleString()} tokens freed)`,
         `**Messages remaining in chain**: ${keptCount}`,
         ``,
@@ -236,11 +278,11 @@ export async function handlePruneToHandoff(args = {}) {
         `Context change takes effect on the next message (no restart needed).`,
         `CLAUDE.md is auto-loaded by Claude Code on every turn — no need for the hand-off to repeat it.`,
         ``,
-        `### Hand-off snippet (now the chain root context)`,
+        `### Hand-off snippet (oldest in cluster, now the chain root context)`,
         `\`\`\``,
         snippet,
         `\`\`\``
-      ].join('\n')
+      ]).join('\n')
     }]
   };
 }

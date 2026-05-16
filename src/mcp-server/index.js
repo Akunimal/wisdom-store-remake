@@ -170,6 +170,16 @@ const TOOLS = [
           type: 'integer',
           description: 'Buffer: keep N additional chain turns from BEFORE the hand-off as a safety pad (in case the hand-off is missing context the next session needs). The tool walks back N entries from the primary anchor, then continues back as needed to land on a valid user/system root. Default: 0 (no buffer — anchor is exactly the message that prompted the hand-off).',
           default: 0
+        },
+        merge_handoff_cluster: {
+          type: 'boolean',
+          description: 'When the chain has multiple hand-off markers within merge_window turns of each other (e.g. original + addendum), bundle them: anchor before the OLDEST marker in the cluster so all hand-offs stay in chain. Default: true. Set false for supersede semantics (newest hand-off should fully replace older ones; older gets orphaned).',
+          default: true
+        },
+        merge_window: {
+          type: 'integer',
+          description: 'Max turns between adjacent markers to count as the same cluster. Each found marker resets the window from its position (transitive expansion). Default: 10 (covers typical write → Q&A → addendum refinement of 5-7 turns; small enough to avoid reaching back across prune cycles where the prior cluster\'s hand-off would otherwise pull in).',
+          default: 10
         }
       }
     }
