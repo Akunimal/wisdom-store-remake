@@ -73,6 +73,20 @@ export async function handlePruneToHandoff(args = {}) {
   const entries = readJsonl(filePath);
   const chain = walkChain(entries);
 
+  // Hot-path optimization: lightweight chain entries (files >50MB) already
+  // retain rawLine, so parsing it in-memory beats re-reading the entire file
+  // via readJsonlLine for every entry we need to inspect. Without this, a
+  // 77MB / 13K-line file's marker scan does ~5K × 77MB = ~385GB of redundant
+  // disk reads — which is why prune-to-handoff was timing out on big sessions
+  // and pegging a core for 60-120s. Fallback to readJsonlLine if rawLine is
+  // absent (non-lightweight path, or stale entries from older readers).
+  const getFullEntry = (chainEntry) => {
+    if (chainEntry?.rawLine) {
+      try { return JSON.parse(chainEntry.rawLine); } catch { return null; }
+    }
+    return readJsonlLine(filePath, chainEntry.line);
+  };
+
   if (chain.length === 0) {
     return {
       content: [{ type: 'text', text: 'Conversation chain is empty.' }],
@@ -99,7 +113,11 @@ export async function handlePruneToHandoff(args = {}) {
   const markerHeadingRegex = new RegExp(`(^|\\n)${escMarker}(?:\\s|$)`);
   let markerIdx = -1;
   for (let i = chain.length - 1; i >= 0; i--) {
-    const full = readJsonlLine(filePath, chain[i].line);
+    // Fast skip: if rawLine doesn't even contain the marker text, no need to
+    // JSON.parse it. Cheap string contains check on a 5-50KB line is much
+    // faster than parsing it just to discover it's not a hand-off.
+    if (chain[i]?.rawLine && !chain[i].rawLine.includes(marker)) continue;
+    const full = getFullEntry(chain[i]);
     if (!full) continue;
     if (full.type !== 'assistant') continue;
     // getMessageContent expects the chain-entry shape { data: ... }
@@ -131,7 +149,11 @@ export async function handlePruneToHandoff(args = {}) {
     let stopAt = Math.max(0, markerIdx - mergeWindow);
     let scanIdx = markerIdx - 1;
     while (scanIdx >= stopAt) {
-      const full = readJsonlLine(filePath, chain[scanIdx].line);
+      if (chain[scanIdx]?.rawLine && !chain[scanIdx].rawLine.includes(marker)) {
+        scanIdx--;
+        continue;
+      }
+      const full = getFullEntry(chain[scanIdx]);
       if (full && full.type === 'assistant') {
         const text = getMessageContent({ data: full });
         if (text && markerHeadingRegex.test(text)) {
@@ -154,7 +176,7 @@ export async function handlePruneToHandoff(args = {}) {
   let anchorFull = null;
   let anchorType = null;
   for (let i = markerIdx; i >= 0; i--) {
-    const full = readJsonlLine(filePath, chain[i].line) || chain[i].data;
+    const full = getFullEntry(chain[i]) || chain[i].data;
     const t = full?.type || chain[i].data.type;
     if (VALID_ROOT_TYPES.has(t)) {
       anchorIdx = i;
@@ -183,7 +205,7 @@ export async function handlePruneToHandoff(args = {}) {
   if (keepRecentNExtra > 0 && anchorIdx > 0) {
     let candidateIdx = Math.max(0, anchorIdx - keepRecentNExtra);
     while (candidateIdx >= 0) {
-      const full = readJsonlLine(filePath, chain[candidateIdx].line) || chain[candidateIdx].data;
+      const full = getFullEntry(chain[candidateIdx]) || chain[candidateIdx].data;
       const t = full?.type || chain[candidateIdx].data.type;
       if (VALID_ROOT_TYPES.has(t)) {
         bufferAppliedCount = anchorIdx - candidateIdx;
