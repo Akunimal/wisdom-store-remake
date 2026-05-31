@@ -167,14 +167,17 @@ Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Regex f
 
 ### Language Support
 
-| Language | Extensions | AST Extraction | Regex fallback |
-|----------|-------------|---------------|----------------|
-| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - |
-| TypeScript | `.ts`, `.tsx` | ✅ Full | - |
-| Python | `.py` | - | ✅ Functions, classes, methods |
-| Go | `.go` | - | ✅ Functions, types, variables |
-| Rust | `.rs` | - | ✅ Functions, structs, enums, traits |
-| HTML | `.html` | - | ✅ Page titles, structure |
+| Language | Extensions | AST Extraction | Regex fallback | Extracted Symbols |
+|----------|-------------|---------------|----------------|-------------------|
+| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - | functions, classes, variables, exports, methods |
+| TypeScript | `.ts`, `.tsx` | ✅ Full | - | functions, classes, interfaces, types, enums, exports |
+| Python | `.py` | - | ✅ | functions, classes, methods, constants |
+| Go | `.go` | - | ✅ | functions, types, structs, interfaces, variables |
+| Rust | `.rs` | - | ✅ | functions, structs, enums, traits, constants |
+| Bash/Shell | `.sh`, `.bash` | - | ✅ | functions |
+| SQL | `.sql` | - | ✅ | tables, views, functions, procedures |
+| YAML | `.yaml`, `.yml` | - | ✅ | top-level keys (config variables) |
+| HTML | `.html` | - | ✅ | page titles, script dependencies, inline functions |
 
 ---
 
@@ -390,14 +393,17 @@ Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Reg
 
 ### Soporte de lenguajes
 
-| Lenguaje | Extensiones | Extracción AST | Regex fallback |
-|----------|-------------|---------------|----------------|
-| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - |
-| TypeScript | `.ts`, `.tsx` | ✅ Full | - |
-| Python | `.py` | - | ✅ Funciones, clases, métodos |
-| Go | `.go` | - | ✅ Funciones, tipos, variables |
-| Rust | `.rs` | - | ✅ Funciones, structs, enums, traits |
-| HTML | `.html` | - | ✅ Títulos de página, estructura |
+| Lenguaje | Extensiones | Extracción AST | Regex fallback | Símbolos extraídos |
+|----------|-------------|---------------|----------------|-------------------|
+| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - | functions, classes, variables, exports, methods |
+| TypeScript | `.ts`, `.tsx` | ✅ Full | - | functions, classes, interfaces, types, enums, exports |
+| Python | `.py` | - | ✅ | functions, classes, methods, constants |
+| Go | `.go` | - | ✅ | functions, types, structs, interfaces, variables |
+| Rust | `.rs` | - | ✅ | functions, structs, enums, traits, constants |
+| Bash/Shell | `.sh`, `.bash` | - | ✅ | functions |
+| SQL | `.sql` | - | ✅ | tables, views, functions, procedures |
+| YAML | `.yaml`, `.yml` | - | ✅ | top-level keys (config variables) |
+| HTML | `.html` | - | ✅ | page titles, script dependencies, inline functions |
 
 ---
 
