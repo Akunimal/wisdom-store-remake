@@ -1,11 +1,250 @@
-# wisdom-store (Lite) 🛡️
+# 🛡️ wisdom-store (Lite)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/tests-5%20passing-brightgreen)](test/)
 
-**MCP server minimalista + hooks para anti-alucinación en AI coding assistants.**
+**Minimalist MCP server + hooks for anti-hallucination in AI coding assistants.**
 
+**Servidor MCP minimalista + hooks para anti-alucinación en AI coding assistants.**
+
+> **Lite Version** — Only the anti-hallucination core. Everything else was removed due to overlap with other tools (Serena MCP, GSD Skills).
+>
 > **Versión Lite** — Solo el núcleo anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
+
+---
+
+## 🌐 Languages / Idiomas
+
+- [🇺🇸 English](#-english)
+- [🇪🇸 Español](#-español)
+
+---
+
+# 🇺🇸 English
+
+## 🎯 What it does
+
+### Project Indexing
+AST-based symbol extraction (via `@ast-grep/napi`):
+- Functions, classes, variables, exports, interfaces, types, enums
+- Automatic API route detection (Express, Hono, Next.js)
+- HTML page inventory
+
+### 🔍 Anti-Hallucination
+Symbol registry with **fuzzy matching** that detects:
+- Hallucinated function names
+- Typos in imports and calls
+- Unknown or non-existent symbols
+- Import paths to files that don't exist
+- Invalid API routes
+
+**Automatic post-write hook** that warns after every edit.
+
+### 🤖 Compatible with Claude Code and Codex
+The hook works on both via standard hook configuration.
+
+---
+
+## 🚀 Quick Installation
+
+```bash
+git clone https://github.com/Akunimal/wisdom-store-remake.git
+cd wisdom-store-remake
+npm install
+```
+
+---
+
+## 🧰 MCP Tools (4 essential tools)
+
+| Tool | Description | When to use |
+|------|-------------|-------------|
+| `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
+| `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
+| `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
+| `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) |
+
+---
+
+## ⚙️ MCP Configuration
+
+Add to your `~/.claude/settings.json` or project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "wisdom-store": {
+      "command": "node",
+      "args": ["/path/to/wisdom-store-remake/src/mcp-server/index.js"],
+      "env": {}
+    }
+  }
+}
+```
+
+Restart Claude Code or run `/mcp` to connect.
+
+---
+
+## 🛡️ Anti-Hallucination Hooks
+
+The `hooks/` directory contains scripts that integrate automatically with Claude Code or Codex.
+
+### Post-Write Hallucination Check
+
+Automatically checks hallucinations after each Write/Edit:
+
+- ❌ Import paths pointing to non-existent files
+- ❌ Imported symbols not found in project registry
+- ❌ Standalone function calls to unknown symbols
+- ❌ API routes not found in project index
+
+**Requires** `.wisdom/symbols.json` — run `get_project_overview` or `reindex_project` once to generate it.
+
+### Claude Code Setup
+
+Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
+          "timeout": 10
+        }]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
+          "timeout": 10
+        }]
+      }
+    ]
+  }
+}
+```
+
+### Codex Setup
+
+In your Codex hooks configuration:
+
+```json
+{
+  "hooks": {
+    "post_write": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh"
+  }
+}
+```
+
+The hook reads standard JSON input from both systems and responds with warnings to stderr (exit code 2).
+
+---
+
+## 📁 Storage Structure
+
+Everything is plain text files in a `.wisdom/` directory at the project root:
+
+```
+.wisdom/
+  symbols.json         # Symbol registry (functions, classes, exports, routes)
+  index.json           # File list + metadata
+```
+
+---
+
+## 🔧 How it works
+
+### AST Extraction
+
+Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Regex fallback for Python, Go, and Rust.
+
+### Language Support
+
+| Language | Extensions | AST Extraction | Regex fallback |
+|----------|-------------|---------------|----------------|
+| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - |
+| TypeScript | `.ts`, `.tsx` | ✅ Full | - |
+| Python | `.py` | - | ✅ Functions, classes, methods |
+| Go | `.go` | - | ✅ Functions, types, variables |
+| Rust | `.rs` | - | ✅ Functions, structs, enums, traits |
+| HTML | `.html` | - | ✅ Page titles, structure |
+
+---
+
+## 🔄 Typical Workflow
+
+```
+1. Start a task
+   └─> get_project_overview → understand the codebase
+
+2. Work on the task
+   └─> Write code...
+
+3. check_symbols (automatic via post-write hook)
+   ├─> ✅ Confirmed symbols → continue
+   ├─> ⚠️ Fuzzy match → possible typo, review
+   └─> ❌ Unknowns → check if hallucination or new symbol
+
+4. If there are legitimate unknowns (new symbols)
+   └─> refresh_symbols → update registry
+```
+
+**The post-write hook does step 3 automatically** after each Write/Edit.
+
+---
+
+## 📦 Requirements
+
+- Node.js 18+
+- Claude Code or Codex (for hooks)
+- Git (optional, for versioning `.wisdom/` directory)
+
+---
+
+## 🧪 Tests
+
+```bash
+npm test
+```
+
+Expected output:
+```
+✔ symbol-check detects known symbols
+✔ symbol-check reports unknown symbols
+✔ symbol-check fuzzy matches typos
+✔ symbol-check handles empty registry
+✔ symbol-check handles missing file
+
+5 passing (XXms)
+```
+
+---
+
+## 📊 Before vs After
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| MCP Tools | 24 | 4 | -83% |
+| Code Files | 50+ | 15 | -70% |
+| Lines of Code | ~12,500 | ~800 | -94% |
+| Internal Libraries | 10 | 2 | -80% |
+
+---
+
+## 📝 License
+
+MIT
+
+---
+
+# 🇪🇸 Español
 
 ## 🎯 Qué hace
 
@@ -33,8 +272,8 @@ El hook funciona en ambos mediante configuración estándar de hooks.
 ## 🚀 Instalación rápida
 
 ```bash
-git clone https://github.com/InfiniQuest-App/wisdom-store.git
-cd wisdom-store
+git clone https://github.com/Akunimal/wisdom-store-remake.git
+cd wisdom-store-remake
 npm install
 ```
 
@@ -60,7 +299,7 @@ Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
   "mcpServers": {
     "wisdom-store": {
       "command": "node",
-      "args": ["/path/to/wisdom-store/src/mcp-server/index.js"],
+      "args": ["/path/to/wisdom-store-remake/src/mcp-server/index.js"],
       "env": {}
     }
   }
@@ -98,7 +337,7 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
         "matcher": "Write",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
+          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       },
@@ -106,7 +345,7 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
         "matcher": "Edit",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
+          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       }
@@ -122,7 +361,7 @@ En tu configuración de hooks de Codex:
 ```json
 {
   "hooks": {
-    "post_write": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh"
+    "post_write": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh"
   }
 }
 ```
@@ -198,8 +437,38 @@ Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Reg
 npm test
 ```
 
+Resultado esperado:
+```
+✔ symbol-check detecta símbolos conocidos
+✔ symbol-check reporta símbolos desconocidos
+✔ symbol-check hace fuzzy match de typos
+✔ symbol-check maneja registry vacío
+✔ symbol-check maneja archivo faltante
+
+5 passing (XXms)
+```
+
 ---
 
-## 📝 License
+## 📊 Antes vs Después
+
+| Métrica | Antes | Después | Cambio |
+|---------|-------|---------|--------|
+| Tools MCP | 24 | 4 | -83% |
+| Archivos de código | 50+ | 15 | -70% |
+| Líneas de código | ~12,500 | ~800 | -94% |
+| Librerías internas | 10 | 2 | -80% |
+
+---
+
+## 📝 Licencia
 
 MIT
+
+---
+
+## 🔗 Links / Enlaces
+
+- **Repository / Repositorio:** https://github.com/Akunimal/wisdom-store-remake
+- **Detailed Summary / Resumen Detallado:** [FOLK_SUMMARY.md](FOLK_SUMMARY.md)
+- **Examples / Ejemplos:** [examples/](examples/)
