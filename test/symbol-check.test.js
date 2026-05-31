@@ -112,6 +112,40 @@ test('setup cleans target repo MCP redundancies with backups', () => {
   assert.ok(fs.readdirSync(path.join(targetRepo, '.codex')).some((name) => name.startsWith('config.toml.backup.')), 'Repo Codex backup should exist');
 });
 
+test('symbol hook ignores imported external bindings', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-hook-'));
+  const sourcePath = path.join(tempRoot, 'index.js');
+  const registryPath = path.join(tempRoot, 'symbols.json');
+
+  fs.writeFileSync(sourcePath, [
+    "import { fileURLToPath } from 'url';",
+    "import path, { basename } from 'path';",
+    '',
+    'const here = path.dirname(fileURLToPath(import.meta.url));',
+    'console.log(basename(here));',
+    ''
+  ].join('\n'));
+  fs.writeFileSync(registryPath, JSON.stringify({
+    _meta: {},
+    functions: {},
+    classes: {},
+    variables: { here: { file: 'index.js', line: 4 } },
+    exports: {},
+    apiRoutes: {},
+    htmlPages: {}
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+});
+
 test('indexer.js has core functions', () => {
   const indexerPath = path.join(rootDir, 'src/mcp-server/lib/indexer.js');
   assert.ok(fs.existsSync(indexerPath), 'indexer.js should exist');
