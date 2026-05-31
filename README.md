@@ -1,51 +1,25 @@
-# wisdom-store
+# wisdom-store (Lite)
 
-An MCP server that gives AI coding assistants persistent memory, context control, and anti-hallucination tools.
+MCP server minimalista + hooks para anti-alucinación en AI coding assistants.
 
-> **Early release** — actively developed, APIs may change. Expect rough edges.
+> **Versión Lite** — Solo el núcleo anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas.
 
-## What it does
+## Qué hace
 
-**Context control** — Trim conversation context live (no restart needed), inject curated knowledge into sessions, monitor context usage.
+**Indexado de proyecto** — Extracción de símbolos basada en AST (vía `@ast-grep/napi`), detección de rutas API, inventario de páginas HTML.
 
-**Persistent knowledge** — Save lessons, patterns, cautions, and edge cases to flat files that survive across sessions. Organize by project section, file, or globally.
+**Anti-alucinación** — Registro de símbolos con fuzzy matching que detecta nombres de funciones hallucinados, typos y símbolos desconocidos. Incluye un hook post-write que automáticamente advierte sobre imports hallucinados, paths de archivos, llamadas a funciones y rutas API después de cada edición.
 
-**Project indexing** — AST-based symbol extraction (via [@ast-grep/napi](https://github.com/nicolo-ribaudo/ast-grep-napi)), API route detection, HTML page inventory. Produces a compact project overview designed to give Claude a detailed map of your project for a fraction of your context window.
+**Compatible con Claude Code y Codex** — El hook funciona en ambos mediante configuración estándar.
 
-**Anti-hallucination** — Symbol registry with fuzzy matching catches hallucinated function names, typos, and unknown symbols. Includes a post-write hook that automatically warns about hallucinated imports, file paths, function calls, and API routes after every edit.
+## Tools MCP (4)
 
-## Tools (11)
-
-### Context Control
-
-| Tool | Description |
+| Tool | Descripción |
 |------|-------------|
-| `context_status` | Check context usage — message count, estimated tokens, bloat indicators |
-| `prune_context` | Trim old messages live. Modes: `oldest_percent`, `before_message`, `after_phrase` |
-| `inject_context` | Insert curated context as a new conversation root. Requires `/resume` to reload |
-
-### Persistent Knowledge
-
-| Tool | Description |
-|------|-------------|
-| `save_wisdom` | Persist lessons, patterns, cautions, edge cases, or decisions to `.wisdom/` files |
-| `get_wisdom` | Load wisdom for a file, section, or keyword. Call with no args for project overview |
-| `update_plan` | Document feature plans with files, decisions, and status |
-| `list_wisdom` | Browse what wisdom exists — sections, plans, patterns, sidecars |
-
-### Project Index
-
-| Tool | Description |
-|------|-------------|
-| `reindex_project` | Scan project, extract symbols via AST, save to `.wisdom/symbols.json` |
-| `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages. Always fresh |
-
-### Anti-Hallucination
-
-| Tool | Description |
-|------|-------------|
-| `check_symbols` | Cross-reference symbols against registry. Reports: confirmed, fuzzy match (typo?), or unknown (hallucinated?) |
-| `refresh_symbols` | Re-scan and update the symbol registry |
+| `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` |
+| `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML |
+| `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados, fuzzy match (typo?), o desconocidos |
+| `refresh_symbols` | Re-escanea y actualiza el registro de símbolos |
 
 ## Install
 
@@ -55,7 +29,9 @@ cd wisdom-store
 npm install
 ```
 
-Add to your `~/.claude.json` or project `.mcp.json` (see [`examples/mcp.json`](examples/mcp.json)):
+## Configuración MCP
+
+Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
 
 ```json
 {
@@ -69,46 +45,30 @@ Add to your `~/.claude.json` or project `.mcp.json` (see [`examples/mcp.json`](e
 }
 ```
 
-Restart Claude Code or run `/mcp` to connect.
+Reinicia Claude Code o ejecuta `/mcp` para conectar.
 
-### Teaching Claude to use it
+## Hooks Anti-Alucinación
 
-Copy the relevant sections from [`examples/CLAUDE.md`](examples/CLAUDE.md) into your project's `CLAUDE.md`. This teaches Claude when to load wisdom, save knowledge, check symbols, and manage context.
-
-## Hooks
-
-The `hooks/` directory contains Claude Code hooks that integrate with wisdom-store automatically.
-
-Add to your settings file — `~/.claude/settings.json` (global), `.claude/settings.json` (project), or `.claude/settings.local.json` (personal per-project). Replace `/path/to/wisdom-store` with your actual clone path.
+El directorio `hooks/` contiene scripts que se integran automáticamente con Claude Code o Codex.
 
 ### Post-Write Hallucination Check
 
-Automatically checks for hallucinations after every Write/Edit:
-- Import paths pointing to files that don't exist
-- Imported symbols not in the project registry
-- Standalone function calls to unknown symbols
-- API routes not found in the project index
+Automáticamente chequea hallucinaciones después de cada Write/Edit:
+- Import paths apuntando a archivos que no existen
+- Símbolos importados no encontrados en el registro del proyecto
+- Llamadas a funciones standalone a símbolos desconocidos
+- Rutas API no encontradas en el índice del proyecto
 
-Requires `.wisdom/symbols.json` — run `get_project_overview` once to generate it (auto-refreshes on each call). Only fires for code files (`.js`, `.ts`, `.py`, `.go`, `.rs`).
+Requiere `.wisdom/symbols.json` — ejecutá `get_project_overview` una vez para generarlo.
 
-### Pre-Compact Save Reminder
+### Setup para Claude Code
 
-Reminds Claude to save important findings to wisdom-store before context gets compacted. Fires on both manual (`/compact`) and automatic compaction. Only fires in projects with a `.wisdom/` directory.
-
-### Setup
+Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto):
 
 ```json
 {
   "hooks": {
     "PostToolUse": [
-      {
-        "matcher": "Edit",
-        "hooks": [{
-          "type": "command",
-          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
-          "timeout": 10
-        }]
-      },
       {
         "matcher": "Write",
         "hooks": [{
@@ -116,14 +76,12 @@ Reminds Claude to save important findings to wisdom-store before context gets co
           "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
-      }
-    ],
-    "PreCompact": [
+      },
       {
-        "matcher": "",
+        "matcher": "Edit",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store/hooks/pre-compact-save-reminder.sh",
+          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       }
@@ -132,103 +90,63 @@ Reminds Claude to save important findings to wisdom-store before context gets co
 }
 ```
 
-## How it works
+### Setup para Codex
+
+En tu configuración de hooks de Codex, agrega el hook post-write:
+
+```json
+{
+  "hooks": {
+    "post_write": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh"
+  }
+}
+```
+
+El hook lee el input JSON estándar de ambos sistemas y responde con warnings en stderr (exit code 2).
+
+## Cómo funciona
 
 ### Storage
 
-Everything is flat files in a `.wisdom/` directory at your project root:
+Todo son archivos planos en un directorio `.wisdom/` en la raíz del proyecto:
 
 ```
 .wisdom/
-  index.json           # Project metadata + file list
-  symbols.json         # Symbol registry (functions, classes, exports, routes)
-  sections/            # Knowledge organized by topic
-    auth.md
-    estimates.md
-  plans/               # Feature plans
-    v2-migration.md
-  patterns/            # Reusable patterns
-    error-handling.md
+  symbols.json         # Registro de símbolos (funciones, clases, exports, rutas)
+  index.json           # Lista de archivos + metadata
 ```
 
-Wisdom is stored at three levels:
+### Extracción AST
 
-- **Project** — `.wisdom/sections/`, `.wisdom/plans/`, `.wisdom/patterns/` for knowledge about this project
-- **File-specific** — Sidecar files next to source: `myfile.js` gets `myfile.js.wisdom`
-- **Global** — `~/.claude/wisdom/` for cross-project lessons (use `scope: "global"` with `save_wisdom`)
+Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Extrae funciones, clases, variables, exports, interfaces, tipos, enums. Regex fallback para Python, Go, y Rust.
 
-### Context manipulation
-
-`prune_context` works by setting `parentUuid: null` on a target message in the JSONL conversation file, orphaning everything before it. This takes effect live on the next message — no restart needed.
-
-`inject_context` appends a new message with `parentUuid: null` as a fresh root. Requires `/resume` to reload. A helper script (`hooks/send-resume.sh`) is included as a starting point for tmux automation, but manual `/resume` is the most reliable approach.
-
-### AST extraction
-
-Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Extracts functions, classes, variables, exports, interfaces, types, enums. Regex fallback for Python, Go, and Rust.
-
-The project overview is designed to be context-efficient — compact enough to fit in a single tool response while covering file tree, symbols, routes, and pages.
-
-## Example output
-
-Running `get_project_overview` on this repo:
+## Workflow típico
 
 ```
-# Project Overview
-
-## Files (16)
-Total: 3,093 lines
-
-- hooks/: symbol-check.mjs (273L)
-- src/mcp-server/: index.js (371L)
-- src/mcp-server/lib/: indexer.js (643L), jsonl.js (276L), wisdom.js (325L)
-- src/mcp-server/tools/: check-symbols.js (87L), context-status.js (123L),
-    get-project-overview.js (58L), get-wisdom.js (179L), inject-context.js (177L),
-    list-wisdom.js (144L), prune-context.js (125L), refresh-symbols.js (15L),
-    reindex-project.js (92L), save-wisdom.js (106L), update-plan.js (99L)
-
-## Symbols
-Functions: 62, Classes/Types: 0, Exports: 40
-
-### Exports
-- appendLine — src/mcp-server/lib/jsonl.js:273
-- checkSymbols — src/mcp-server/lib/indexer.js:543
-- findConversationFile — src/mcp-server/lib/jsonl.js:30
-- generateOverview — src/mcp-server/lib/indexer.js:450
-- handleCheckSymbols — src/mcp-server/tools/check-symbols.js:24
-- handlePruneContext — src/mcp-server/tools/prune-context.js:23
-- scanProject — src/mcp-server/lib/indexer.js:50
-- walkChain — src/mcp-server/lib/jsonl.js:160
-  ... (40 exports total)
+1. Empezar una tarea
+2. get_project_overview → entender el codebase
+3. Trabajar en la tarea
+4. check_symbols después de escribir código → detectar hallucinations
+5. Si check_symbols reporta unknowns: refresh_symbols para actualizar el registro
 ```
 
-## Typical workflow
+El hook post-write hace el paso 4 automáticamente después de cada Write/Edit.
 
-```
-1. Start working on a task
-2. get_project_overview → understand the codebase
-3. get_wisdom for relevant files/sections → load past knowledge
-4. Work on the task
-5. save_wisdom to persist new insights
-6. check_symbols after writing code → catch hallucinations
-7. If context gets large: save_wisdom → prune_context → continue
-```
+## Soporte de lenguajes
 
-## Language support
-
-| Language | AST extraction | Regex fallback |
+| Lenguaje | Extracción AST | Regex fallback |
 |----------|---------------|----------------|
 | JavaScript (.js, .mjs, .cjs, .jsx) | Full | - |
 | TypeScript (.ts, .tsx) | Full | - |
-| Python (.py) | - | Functions, classes, methods |
-| Go (.go) | - | Functions, types, variables |
-| Rust (.rs) | - | Functions, structs, enums, traits |
-| HTML (.html) | - | Page titles, structure |
+| Python (.py) | - | Funciones, clases, métodos |
+| Go (.go) | - | Funciones, tipos, variables |
+| Rust (.rs) | - | Funciones, structs, enums, traits |
+| HTML (.html) | - | Títulos de página, estructura |
 
-## Requirements
+## Requisitos
 
 - Node.js 18+
-- Claude Code (for MCP integration and hooks)
+- Claude Code o Codex (para hooks)
 
 ## License
 

@@ -8,6 +8,8 @@
  *
  * Checks local imports AND standalone function calls against the
  * project's .wisdom/symbols.json registry.
+ *
+ * Compatible with Claude Code and Codex hooks.
  */
 import fs from 'fs';
 import path from 'path';
@@ -29,7 +31,21 @@ try {
 let diffContent = '';
 if (diffOnly) {
   try {
-    diffContent = fs.readFileSync(0, 'utf8'); // fd 0 = stdin
+    const readStdin = () => {
+      return new Promise((resolve) => {
+        let data = '';
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('readable', () => {
+          let chunk;
+          while ((chunk = process.stdin.read()) !== null) {
+            data += chunk;
+          }
+        });
+        process.stdin.on('end', () => resolve(data));
+        process.stdin.on('error', () => resolve(''));
+      });
+    };
+    diffContent = await readStdin();
   } catch { process.exit(0); }
   if (!diffContent.trim()) process.exit(0);
 }
@@ -322,8 +338,7 @@ if (unknowns.length > 0) {
 }
 
 if (warnings.length > 0) {
-  warnings.push(`If this warning is a false positive or unhelpful, use save_wisdom to log the issue (e.g. save_wisdom({ content: "symbol-check flagged X as unknown but it's a builtin/dependency — consider adding to SKIP list", section: "tool-feedback" })).`);
-  // Exit code 2 + stderr = feedback shown directly to Claude
+  // Exit code 2 + stderr = feedback shown directly to Claude/Codex
   console.error(warnings.join('\n'));
   process.exit(2);
 }
