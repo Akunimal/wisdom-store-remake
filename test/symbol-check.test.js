@@ -40,6 +40,18 @@ test('MCP server index.js has correct tools', () => {
   assert.ok(!content.includes('save_wisdom'), 'Should NOT have save_wisdom');
 });
 
+test('MCP server supports compatibility tool filtering', () => {
+  const indexPath = path.join(rootDir, 'src/mcp-server/index.js');
+  const setupPath = path.join(rootDir, 'scripts/setup.js');
+
+  const indexContent = fs.readFileSync(indexPath, 'utf8');
+  const setupContent = fs.readFileSync(setupPath, 'utf8');
+
+  assert.ok(indexContent.includes('WISDOM_STORE_DISABLED_TOOLS'), 'Server should support disabled tool env');
+  assert.ok(setupContent.includes('detectRedundantTools'), 'Setup should detect redundant tools');
+  assert.ok(setupContent.includes('get_project_overview'), 'Setup should disable redundant overview tool');
+});
+
 test('indexer.js has core functions', () => {
   const indexerPath = path.join(rootDir, 'src/mcp-server/lib/indexer.js');
   assert.ok(fs.existsSync(indexerPath), 'indexer.js should exist');

@@ -42,6 +42,26 @@ import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
 import { handleDetectEnvironment } from './tools/detect-environment.js';
 
+function parseDisabledTools(value) {
+  if (!value) {
+    return new Set();
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.map(String));
+    }
+  } catch {}
+
+  return new Set(
+    value
+      .split(/[,\s]+/)
+      .map((tool) => tool.trim())
+      .filter(Boolean)
+  );
+}
+
 const server = new Server(
   { name: 'wisdom-store', version: '0.5.0' },
   { capabilities: { tools: {} } }
@@ -138,14 +158,24 @@ const TOOLS = [
   }
 ];
 
+const disabledTools = parseDisabledTools(process.env.WISDOM_STORE_DISABLED_TOOLS);
+const activeTools = TOOLS.filter((tool) => !disabledTools.has(tool.name));
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: TOOLS
+  tools: activeTools
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
+    if (disabledTools.has(name)) {
+      return {
+        content: [{ type: 'text', text: `Tool disabled by WISDOM_STORE_DISABLED_TOOLS: ${name}` }],
+        isError: true
+      };
+    }
+
     switch (name) {
       case 'detect_environment':
         return await handleDetectEnvironment(args);
