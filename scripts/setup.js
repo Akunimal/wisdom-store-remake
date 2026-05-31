@@ -12,18 +12,20 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { platform } from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = join(__dirname, '..');
+const cliOptions = parseSetupArgs(process.argv.slice(2));
+const PROJECT_ROOT = resolve(cliOptions.project || process.cwd());
 const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 const SETTINGS_PATH = join(homeDir, '.claude', 'settings.json');
 const CODEX_CONFIG_PATH = join(homeDir, '.codex', 'config.toml');
-const PROJECT_SETTINGS_PATH = join(ROOT_DIR, '.claude', 'settings.json');
-const PROJECT_MCP_JSON_PATH = join(ROOT_DIR, '.mcp.json');
-const PROJECT_CODEX_CONFIG_PATH = join(ROOT_DIR, '.codex', 'config.toml');
+const PROJECT_SETTINGS_PATH = join(PROJECT_ROOT, '.claude', 'settings.json');
+const PROJECT_MCP_JSON_PATH = join(PROJECT_ROOT, '.mcp.json');
+const PROJECT_CODEX_CONFIG_PATH = join(PROJECT_ROOT, '.codex', 'config.toml');
 
 // Colors for output
 const colors = {
@@ -53,6 +55,47 @@ function logWarn(msg) {
 
 function logError(msg) {
   log(`❌ ${msg}`, 'red');
+}
+
+function parseSetupArgs(args) {
+  const options = { project: null };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--project') {
+      options.project = args[++i];
+    } else if (arg.startsWith('--project=')) {
+      options.project = arg.slice('--project='.length);
+    } else if (arg === '-p') {
+      options.project = args[++i];
+    }
+  }
+
+  return options;
+}
+
+function createBackup(filePath) {
+  if (!existsSync(filePath)) {
+    return null;
+  }
+
+  const backupPath = `${filePath}.backup.${Date.now()}`;
+  writeFileSync(backupPath, readFileSync(filePath, 'utf-8'), 'utf-8');
+  return backupPath;
+}
+
+function writeConfigFile(filePath, content, label) {
+  const current = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : null;
+  if (current === content) {
+    return null;
+  }
+
+  const backupPath = createBackup(filePath);
+  writeFileSync(filePath, content, 'utf-8');
+  if (backupPath) {
+    log(`Backup created for ${label}: ${backupPath}`);
+  }
+  return backupPath;
 }
 
 function escapeRegExp(value) {
@@ -114,15 +157,44 @@ function extractCodexMcpServerNames(configContent) {
   return names;
 }
 
-function removeCodexMcpServerBlocks(configContent, names) {
-  let nextContent = configContent;
+function parseTomlTableName(line) {
+  const match = line.match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/);
+  return match ? normalizeTomlTableName(match[1]) : null;
+}
 
-  for (const name of names) {
-    const pattern = new RegExp(`(^|\\n)\\[mcp_servers\\.${escapeRegExp(name)}\\]\\n[\\s\\S]*?(?=\\n\\[|$)`);
-    nextContent = nextContent.replace(pattern, '$1');
+function normalizeTomlTableName(tableName) {
+  return tableName
+    .split('.')
+    .map((segment) => segment.trim().replace(/^"|"$/g, ''))
+    .join('.');
+}
+
+function codexMcpTableBelongsTo(tableName, serverNames) {
+  if (!tableName) {
+    return false;
   }
 
-  return nextContent.replace(/\n{3,}/g, '\n\n').trimEnd() + (nextContent.trim() ? '\n' : '');
+  return [...serverNames].some((name) => tableName === `mcp_servers.${name}` || tableName.startsWith(`mcp_servers.${name}.`));
+}
+
+function removeCodexMcpServerBlocks(configContent, names) {
+  const nameSet = new Set(names);
+  const lines = configContent.split(/\r?\n/);
+  const kept = [];
+  let skip = false;
+
+  for (const line of lines) {
+    const tableName = parseTomlTableName(line);
+    if (tableName) {
+      skip = codexMcpTableBelongsTo(tableName, nameSet);
+    }
+    if (!skip) {
+      kept.push(line);
+    }
+  }
+
+  const content = kept.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+  return content ? `${content}\n` : '';
 }
 
 const MCP_CAPABILITY_PROFILES = [
@@ -276,13 +348,13 @@ function writeRepoMcpFixes(cleanup, originalConfigs) {
   }
 
   if (JSON.stringify(cleanup.configs.projectClaude) !== JSON.stringify(originalConfigs.projectClaude) && existsSync(PROJECT_SETTINGS_PATH)) {
-    writeFileSync(PROJECT_SETTINGS_PATH, JSON.stringify(cleanup.configs.projectClaude, null, 2), 'utf-8');
+    writeConfigFile(PROJECT_SETTINGS_PATH, JSON.stringify(cleanup.configs.projectClaude, null, 2) + '\n', 'repo .claude/settings.json');
   }
   if (JSON.stringify(cleanup.configs.projectMcpJson) !== JSON.stringify(originalConfigs.projectMcpJson) && existsSync(PROJECT_MCP_JSON_PATH)) {
-    writeFileSync(PROJECT_MCP_JSON_PATH, JSON.stringify(cleanup.configs.projectMcpJson, null, 2), 'utf-8');
+    writeConfigFile(PROJECT_MCP_JSON_PATH, JSON.stringify(cleanup.configs.projectMcpJson, null, 2) + '\n', 'repo .mcp.json');
   }
   if (cleanup.configs.projectCodex !== originalConfigs.projectCodex && existsSync(PROJECT_CODEX_CONFIG_PATH)) {
-    writeFileSync(PROJECT_CODEX_CONFIG_PATH, cleanup.configs.projectCodex, 'utf-8');
+    writeConfigFile(PROJECT_CODEX_CONFIG_PATH, cleanup.configs.projectCodex, 'repo .codex/config.toml');
   }
 }
 
@@ -334,6 +406,7 @@ logStep('Detecting environment...');
 const os = platform();
 const isWindows = os === 'win32';
 log(`OS: ${os}`);
+log(`Target project: ${PROJECT_ROOT}`);
 
 // 2. Ensure .claude directory exists
 logStep('Ensuring Claude config directory exists...');
@@ -357,7 +430,7 @@ if (existsSync(SETTINGS_PATH)) {
   } catch (e) {
     logWarn('Could not parse existing settings.json. Creating backup and starting fresh.');
     const backupPath = SETTINGS_PATH + '.backup.' + Date.now();
-    writeFileSync(backupPath, readFileSync(SETTINGS_PATH, 'utf-8'));
+    writeFileSync(backupPath, readFileSync(SETTINGS_PATH, 'utf-8'), 'utf-8');
     log(`Backup created at: ${backupPath}`);
     settings = {};
   }
@@ -455,7 +528,7 @@ if (isMcpConfigured && isHookConfigured) {
 
   // Write back
   try {
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+    writeConfigFile(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n', '~/.claude/settings.json');
     logSuccess('settings.json updated successfully');
   } catch (e) {
     logError(`Failed to write settings.json: ${e.message}`);
@@ -477,7 +550,7 @@ if (!existsSync(codexDir)) {
 try {
   const nextConfig = upsertCodexMcpServer(codexConfig, mcpName, mcpServerPath, redundantTools);
   if (nextConfig !== codexConfig) {
-    writeFileSync(CODEX_CONFIG_PATH, nextConfig, 'utf-8');
+    writeConfigFile(CODEX_CONFIG_PATH, nextConfig, '~/.codex/config.toml');
     logSuccess('config.toml updated successfully');
   } else {
     logSuccess('wisdom-store already configured in config.toml!');

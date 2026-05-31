@@ -9,3 +9,4 @@
 - Added MCP compatibility mode so setup can disable redundant Wisdom Store tools when equivalent MCP servers are already configured.
 - Extended MCP compatibility checks across global and repo-level MCP configs, with duplicate capability reporting for existing servers.
 - Automated repo-level MCP cleanup for redundant server entries in `.mcp.json`, repo `.claude/settings.json`, and repo `.codex/config.toml`.
+- Hardened setup for commercial project installation with `--project`, target-repo cleanup, backups before config writes, safer Codex TOML table cleanup, integration coverage, and aligned package version metadata.

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-6%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-7%20passing-brightgreen)](test/)
 
 **Minimalist MCP server + hooks for anti-hallucination in AI coding assistants.**
 
@@ -56,10 +56,11 @@ npm install
 
 ### 🎁 Automated Setup (Recommended)
 
-Run the interactive setup script to configure everything automatically:
+Run the setup script from the project you want to configure, or pass `--project` explicitly:
 
 ```bash
-node scripts/setup.js
+node /path/to/wisdom-store-remake/scripts/setup.js
+node /path/to/wisdom-store-remake/scripts/setup.js --project /path/to/target-project
 ```
 
 This script will:
@@ -129,7 +130,7 @@ startup_timeout_sec = 15
 
 You can manually disable any Wisdom Store tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
 
-The setup also removes redundant repo-level MCP entries automatically when a better equivalent is already configured, while leaving global MCP configs untouched so other projects are not affected.
+The setup also removes redundant repo-level MCP entries automatically when a better equivalent is already configured, while leaving global MCP configs untouched so other projects are not affected. Before changing an existing config file, it writes a timestamped `.backup.<timestamp>` copy next to that file.
 
 ---
 
