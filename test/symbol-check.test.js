@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +56,60 @@ test('MCP server supports compatibility tool filtering', () => {
   assert.ok(setupContent.includes('PROJECT_MCP_JSON_PATH'), 'Setup should inspect repo .mcp.json');
   assert.ok(setupContent.includes('PROJECT_CODEX_CONFIG_PATH'), 'Setup should inspect repo Codex config');
   assert.ok(setupContent.includes('get_project_overview'), 'Setup should disable redundant overview tool');
+});
+
+test('setup cleans target repo MCP redundancies with backups', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-setup-'));
+  const targetRepo = path.join(tempRoot, 'target-repo');
+  const homeDir = path.join(tempRoot, 'home');
+  fs.mkdirSync(path.join(targetRepo, '.claude'), { recursive: true });
+  fs.mkdirSync(path.join(targetRepo, '.codex'), { recursive: true });
+  fs.mkdirSync(homeDir, { recursive: true });
+
+  fs.writeFileSync(path.join(targetRepo, '.claude', 'settings.json'), JSON.stringify({
+    mcpServers: {
+      serena: {
+        command: 'serena',
+        args: ['start-mcp-server']
+      }
+    }
+  }, null, 2));
+  fs.writeFileSync(path.join(targetRepo, '.mcp.json'), JSON.stringify({
+    mcpServers: {
+      graphify: {
+        command: 'graphify',
+        args: ['mcp']
+      }
+    }
+  }, null, 2));
+  fs.writeFileSync(path.join(targetRepo, '.codex', 'config.toml'), [
+    '[mcp_servers.project-overview]',
+    'command = "project-overview"',
+    'args = ["mcp"]',
+    ''
+  ].join('\n'));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'scripts', 'setup.js'),
+    '--project',
+    targetRepo
+  ], {
+    cwd: rootDir,
+    env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    encoding: 'utf8'
+  });
+
+  assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+
+  const projectMcp = JSON.parse(fs.readFileSync(path.join(targetRepo, '.mcp.json'), 'utf8'));
+  const projectCodex = fs.readFileSync(path.join(targetRepo, '.codex', 'config.toml'), 'utf8');
+  const globalCodex = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
+
+  assert.ok(!projectMcp.mcpServers.graphify, 'Redundant .mcp.json server should be removed');
+  assert.ok(!projectCodex.includes('project-overview'), 'Redundant repo Codex server should be removed');
+  assert.ok(globalCodex.includes('WISDOM_STORE_DISABLED_TOOLS = "get_project_overview"'), 'Wisdom Store should be complementary');
+  assert.ok(fs.readdirSync(targetRepo).some((name) => name.startsWith('.mcp.json.backup.')), 'Repo .mcp.json backup should exist');
+  assert.ok(fs.readdirSync(path.join(targetRepo, '.codex')).some((name) => name.startsWith('config.toml.backup.')), 'Repo Codex backup should exist');
 });
 
 test('indexer.js has core functions', () => {

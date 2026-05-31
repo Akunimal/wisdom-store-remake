@@ -1,6 +1,6 @@
 {
   "name": "wisdom-store",
-  "version": "0.4.0-lite",
+  "version": "0.5.0",
   "description": "MCP server providing anti-hallucination tools for AI coding assistants",
   "type": "module",
   "license": "MIT",
