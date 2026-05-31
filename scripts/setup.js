@@ -6,6 +6,7 @@
  * Automated onboarding for Claude Code & Codex.
  * - Detects OS and Shell
  * - Configures ~/.claude/settings.json
+ * - Configures ~/.codex/config.toml
  * - Registers MCP server and Hooks
  * - Validates installation
  */
@@ -17,7 +18,9 @@ import { platform } from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = join(__dirname, '..');
-const SETTINGS_PATH = join(process.env.HOME || process.env.USERPROFILE || '', '.claude', 'settings.json');
+const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+const SETTINGS_PATH = join(homeDir, '.claude', 'settings.json');
+const CODEX_CONFIG_PATH = join(homeDir, '.codex', 'config.toml');
 
 // Colors for output
 const colors = {
@@ -49,6 +52,39 @@ function logError(msg) {
   log(`❌ ${msg}`, 'red');
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function tomlString(value) {
+  return `"${value.replace(/\\/g, '/').replace(/"/g, '\\"')}"`;
+}
+
+function upsertCodexMcpServer(configContent, name, serverPath) {
+  const block = [
+    `[mcp_servers.${name}]`,
+    'command = "node"',
+    `args = [${tomlString(serverPath)}]`,
+    'startup_timeout_sec = 15'
+  ].join('\n');
+
+  const pattern = new RegExp(`(^|\\n)\\[mcp_servers\\.${escapeRegExp(name)}\\]\\n[\\s\\S]*?(?=\\n\\[|$)`);
+
+  if (pattern.test(configContent)) {
+    return configContent.replace(pattern, `$1${block}\n`);
+  }
+
+  const separator = configContent.trim().length === 0 ? '' : '\n\n';
+  return `${configContent.trimEnd()}${separator}${block}\n`;
+}
+
+function hookEntryIncludes(entry, value) {
+  if (typeof entry === 'string') {
+    return entry.includes(value);
+  }
+  return JSON.stringify(entry).includes(value);
+}
+
 // 1. Detect Environment
 logStep('Detecting environment...');
 const os = platform();
@@ -57,7 +93,6 @@ log(`OS: ${os}`);
 
 // 2. Ensure .claude directory exists
 logStep('Ensuring Claude config directory exists...');
-const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 const claudeDir = join(homeDir, '.claude');
 if (!existsSync(claudeDir)) {
   mkdirSync(claudeDir, { recursive: true });
@@ -86,9 +121,10 @@ if (existsSync(SETTINGS_PATH)) {
 
 // Prepare MCP config
 const mcpName = 'wisdom-store';
+const mcpServerPath = join(ROOT_DIR, 'src', 'mcp-server', 'index.js');
 const mcpConfig = {
   command: 'node',
-  args: [join(ROOT_DIR, 'src', 'mcp-server', 'index.js')],
+  args: [mcpServerPath],
   env: {}
 };
 
@@ -107,8 +143,8 @@ if (!settings.hooks) settings.hooks = {};
 
 // Check if already configured
 const isMcpConfigured = settings.mcpServers[mcpName]?.command === 'node' && 
-                        settings.mcpServers[mcpName].args?.includes('index.js');
-const isHookConfigured = settings.hooks.PostToolUse?.some(h => h.includes('post-write-symbol-check.sh'));
+                        settings.mcpServers[mcpName].args?.some(arg => arg.includes('index.js'));
+const isHookConfigured = settings.hooks.PostToolUse?.some(h => hookEntryIncludes(h, 'post-write-symbol-check.sh'));
 
 if (isMcpConfigured && isHookConfigured) {
   logSuccess('wisdom-store already configured in settings.json!');
@@ -125,7 +161,7 @@ if (isMcpConfigured && isHookConfigured) {
   }
   
   // Avoid duplicates
-  if (!settings.hooks.PostToolUse.some(h => h.includes('post-write-symbol-check.sh'))) {
+  if (!settings.hooks.PostToolUse.some(h => hookEntryIncludes(h, 'post-write-symbol-check.sh'))) {
     settings.hooks.PostToolUse.push(postWriteHook);
   }
 
@@ -137,6 +173,32 @@ if (isMcpConfigured && isHookConfigured) {
     logError(`Failed to write settings.json: ${e.message}`);
     process.exit(1);
   }
+}
+
+// 3b. Configure Codex MCP server
+logStep('Configuring ~/.codex/config.toml...');
+const codexDir = dirname(CODEX_CONFIG_PATH);
+if (!existsSync(codexDir)) {
+  mkdirSync(codexDir, { recursive: true });
+  logSuccess('Created ~/.codex directory');
+}
+
+let codexConfig = '';
+if (existsSync(CODEX_CONFIG_PATH)) {
+  codexConfig = readFileSync(CODEX_CONFIG_PATH, 'utf-8');
+}
+
+try {
+  const nextConfig = upsertCodexMcpServer(codexConfig, mcpName, mcpServerPath);
+  if (nextConfig !== codexConfig) {
+    writeFileSync(CODEX_CONFIG_PATH, nextConfig, 'utf-8');
+    logSuccess('config.toml updated successfully');
+  } else {
+    logSuccess('wisdom-store already configured in config.toml!');
+  }
+} catch (e) {
+  logError(`Failed to write config.toml: ${e.message}`);
+  process.exit(1);
 }
 
 // 4. Validate Installation
@@ -160,9 +222,10 @@ log(`${colors.bold}🎉 SETUP COMPLETE!${colors.reset}`, 'green');
 console.log('='.repeat(60));
 log('\nNext steps:', 'bold');
 log('1. Restart your terminal or Claude Code session.');
-log('2. In Claude Code, type: "Reindex this project"');
+log('2. In Claude Code or Codex, type: "Reindex this project"');
 log('3. The anti-hallucination hook will now run automatically after every file write.');
 log('\nConfiguration file: ' + SETTINGS_PATH);
+log('Codex config file: ' + CODEX_CONFIG_PATH);
 log('MCP Server: ' + mcpName);
 log('Active Hook: PostToolUse (post-write-symbol-check.sh)');
 console.log('');

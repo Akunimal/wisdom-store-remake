@@ -65,9 +65,10 @@ node scripts/setup.js
 This script will:
 1. ✅ Detect your OS and environment
 2. ✅ Create `~/.claude` directory if needed
-3. ✅ Configure `settings.json` with MCP server and hooks
-4. ✅ Validate installation
-5. ✅ Provide next steps
+3. ✅ Configure `~/.claude/settings.json` with MCP server and hooks
+4. ✅ Configure `~/.codex/config.toml` with the MCP server
+5. ✅ Validate installation
+6. ✅ Provide next steps
 
 ---
 
@@ -100,6 +101,19 @@ Add to your `~/.claude/settings.json` or project's `.mcp.json`:
 ```
 
 Restart Claude Code or run `/mcp` to connect.
+
+### Codex MCP Configuration
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.wisdom-store]
+command = "node"
+args = ["/path/to/wisdom-store-remake/src/mcp-server/index.js"]
+startup_timeout_sec = 15
+```
+
+Restart Codex to connect.
 
 ---
 
