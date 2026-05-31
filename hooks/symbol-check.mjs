@@ -86,6 +86,66 @@ function stripCommentsAndStrings(code) {
 }
 
 const referenced = new Set();
+const importedBindings = new Set();
+
+function addImportBinding(name) {
+  const trimmed = name.trim();
+  if (trimmed && /^[a-zA-Z_$][\w$]*$/.test(trimmed)) {
+    importedBindings.add(trimmed);
+  }
+}
+
+function collectImportedBindings(code) {
+  for (const match of code.matchAll(/import\s+(?:type\s+)?([^'";]+?)\s+from\s*['"][^'"]+['"]/g)) {
+    const clause = match[1].trim();
+
+    const defaultMatch = clause.match(/^([a-zA-Z_$][\w$]*)\s*(?:,|$)/);
+    if (defaultMatch) {
+      addImportBinding(defaultMatch[1]);
+    }
+
+    const namespaceMatch = clause.match(/\*\s+as\s+([a-zA-Z_$][\w$]*)/);
+    if (namespaceMatch) {
+      addImportBinding(namespaceMatch[1]);
+    }
+
+    const namedMatch = clause.match(/\{([^}]+)\}/);
+    if (namedMatch) {
+      for (const specifier of namedMatch[1].split(',')) {
+        const parts = specifier.trim().split(/\s+as\s+/);
+        addImportBinding(parts[1] || parts[0]);
+      }
+    }
+  }
+
+  for (const match of code.matchAll(/import\s*\{([^}]+)\}\s*from\s*['"][^'"]+['"]/g)) {
+    for (const specifier of match[1].split(',')) {
+      const parts = specifier.trim().split(/\s+as\s+/);
+      addImportBinding(parts[1] || parts[0]);
+    }
+  }
+
+  for (const match of code.matchAll(/import\s+([a-zA-Z_$][\w$]*)\s+from\s*['"][^'"]+['"]/g)) {
+    addImportBinding(match[1]);
+  }
+
+  for (const match of code.matchAll(/import\s+\*\s+as\s+([a-zA-Z_$][\w$]*)\s+from\s*['"][^'"]+['"]/g)) {
+    addImportBinding(match[1]);
+  }
+
+  for (const match of code.matchAll(/(?:const|let|var)\s*\{([^}]+)\}\s*=\s*require\s*\(\s*['"][^'"]+['"]\s*\)/g)) {
+    for (const specifier of match[1].split(',')) {
+      const parts = specifier.trim().split(/\s*:\s*/);
+      addImportBinding(parts[1] || parts[0]);
+    }
+  }
+
+  for (const match of code.matchAll(/(?:const|let|var)\s+([a-zA-Z_$][\w$]*)\s*=\s*require\s*\(\s*['"][^'"]+['"]\s*\)/g)) {
+    addImportBinding(match[1]);
+  }
+}
+
+collectImportedBindings(content);
 
 // --- Imports (checked against scanContent) ---
 
@@ -233,6 +293,7 @@ const unknowns = [];
 for (const name of referenced) {
   if (name.length <= 2) continue;
   if (/^[A-Z_]+$/.test(name)) continue; // CONSTANTS
+  if (importedBindings.has(name)) continue;
 
   // Is it a local definition in this file? (check full file, not just diff)
   const localDef = new RegExp(`(?:function|const|let|var|class)\\s+${name}\\b`);

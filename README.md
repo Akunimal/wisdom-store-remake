@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-7%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-8%20passing-brightgreen)](test/)
 
 **Minimalist MCP server + hooks for anti-hallucination in AI coding assistants.**
 
@@ -42,7 +42,7 @@ Symbol registry with **fuzzy matching** that detects:
 **Automatic post-write hook** that warns after every edit.
 
 ### 🤖 Compatible with Claude Code and Codex
-The hook works on both via standard hook configuration.
+The MCP server works with Claude Code and Codex. The post-write hook is installed automatically for Claude Code only; Codex hook support depends on the Codex app/runtime hook mechanism and is documented as manual configuration.
 
 ---
 
@@ -66,7 +66,7 @@ node /path/to/wisdom-store-remake/scripts/setup.js --project /path/to/target-pro
 This script will:
 1. ✅ Detect your OS and environment
 2. ✅ Create `~/.claude` directory if needed
-3. ✅ Configure `~/.claude/settings.json` with MCP server and hooks
+3. ✅ Configure `~/.claude/settings.json` with MCP server and Claude Code hooks
 4. ✅ Configure `~/.codex/config.toml` with the MCP server
 5. ✅ Validate installation
 6. ✅ Provide next steps
@@ -178,9 +178,9 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 }
 ```
 
-### Codex Setup
+### Codex Hook Setup
 
-In your Codex hooks configuration:
+`scripts/setup.js` configures the Codex MCP server, but it does not install Codex post-write hooks automatically. If your Codex runtime supports a compatible post-write hook configuration, you can wire this script manually:
 
 ```json
 {
@@ -190,7 +190,7 @@ In your Codex hooks configuration:
 }
 ```
 
-The hook reads standard JSON input from both systems and responds with warnings to stderr (exit code 2).
+The hook reads JSON input and responds with warnings to stderr (exit code 2), but Codex hook payloads can vary by app/runtime version. Verify it in your Codex environment before enabling it always-on.
 
 ---
 
