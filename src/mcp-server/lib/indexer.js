@@ -2,10 +2,14 @@
  * Project indexer and symbol extraction using @ast-grep/napi.
  *
  * AST-based symbol extraction supporting:
- * - JavaScript/TypeScript/TSX: functions, classes, variables, exports, interfaces, types, enums
- * - Python: functions, classes, variables (via regex fallback)
- * - Go: functions, types, structs (via regex fallback)
- * - Rust: functions, structs, enums, traits (via regex fallback)
+ * - JavaScript/TypeScript/TSX: functions, classes, variables, exports, interfaces, types, enums (AST via ast-grep)
+ * - Python: functions, classes, variables (regex fallback)
+ * - Go: functions, types, structs (regex fallback)
+ * - Rust: functions, structs, enums, traits (regex fallback)
+ * - Bash/Shell: functions (regex fallback)
+ * - SQL: tables, views, functions, procedures (regex fallback)
+ * - YAML: top-level keys as config variables (regex fallback)
+ * - HTML: pages, titles, script dependencies, inline functions
  *
  * JS/TS uses proper AST parsing via ast-grep (tree-sitter).
  * Other languages use regex as fallback until their ast-grep lang plugins are added.
@@ -42,6 +46,13 @@ const LANG_MAP = {
   '.go': { lang: null, name: 'go' },
   '.rs': { lang: null, name: 'rust' },
   '.html': { lang: null, name: 'html' },
+  '.sh': { lang: null, name: 'bash' },
+  '.bash': { lang: null, name: 'bash' },
+  '.sql': { lang: null, name: 'sql' },
+  '.yaml': { lang: null, name: 'yaml' },
+  '.yml': { lang: null, name: 'yaml' },
+  '.json': { lang: null, name: 'json' },
+  '.md': { lang: null, name: 'markdown' },
 };
 
 /**
@@ -351,6 +362,15 @@ function extractWithRegex(filePath, lines, lang, symbols, lineOffset = 0) {
     case 'rust':
       extractRust(filePath, lines, symbols);
       break;
+    case 'bash':
+      extractBash(filePath, lines, symbols);
+      break;
+    case 'sql':
+      extractSql(filePath, lines, symbols);
+      break;
+    case 'yaml':
+      extractYaml(filePath, lines.join('\n'), symbols);
+      break;
   }
 }
 
@@ -441,6 +461,69 @@ function extractRust(filePath, lines, symbols) {
 
     const constDecl = line.match(/^(?:pub\s+)?(?:const|static)\s+(\w+)/);
     if (constDecl) { addSymbol(symbols.variables, constDecl[1], filePath, lineNum); }
+  }
+}
+
+function extractBash(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const lineNum = i + 1;
+
+    // Skip comments and empty lines
+    if (!line || line.startsWith('#')) continue;
+
+    // Function definitions: function foo() or foo()
+    const funcDecl = line.match(/^(?:function\s+)?(\w+)\s*\(\s*\)/);
+    if (funcDecl && !['if', 'while', 'for', 'case', 'function'].includes(funcDecl[1])) {
+      addSymbol(symbols.functions, funcDecl[1], filePath, lineNum);
+      continue;
+    }
+
+    // Named functions with braces: function foo {
+    const funcBrace = line.match(/^function\s+(\w+)\s*\{/);
+    if (funcBrace) {
+      addSymbol(symbols.functions, funcBrace[1], filePath, lineNum);
+      continue;
+    }
+  }
+}
+
+function extractSql(filePath, lines, symbols) {
+  let currentTable = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const lineNum = i + 1;
+
+    // CREATE TABLE statements
+    const createTable = line.match(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s*\(/i);
+    if (createTable) {
+      currentTable = createTable[1];
+      addSymbol(symbols.classes, currentTable, filePath, lineNum);
+      continue;
+    }
+
+    // Function/procedure definitions
+    const createFunc = line.match(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?/i);
+    if (createFunc) {
+      addSymbol(symbols.functions, createFunc[1], filePath, lineNum);
+      continue;
+    }
+  }
+}
+
+function extractYaml(filePath, content, symbols) {
+  // Extract top-level keys as "variables" for YAML configs
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    // Top-level keys (no indentation) that look like identifiers
+    const topLevel = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:/);
+    if (topLevel) {
+      addSymbol(symbols.variables, topLevel[1], filePath, lineNum);
+    }
   }
 }
 
