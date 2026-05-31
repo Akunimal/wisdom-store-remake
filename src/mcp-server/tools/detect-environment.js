@@ -10,8 +10,6 @@ import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import path from 'path';
 
-const MCP = require('@modelcontextprotocol/sdk/server/mcp.js');
-
 function safeExec(command) {
   try {
     return execSync(command, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
@@ -161,6 +159,7 @@ function getPlatformRules() {
 }
 
 async function detectEnvironmentHandler() {
+  const plat = platform();
   const os = detectOS();
   const shell = detectShell();
   const packageManagers = detectPackageManagers();
@@ -187,17 +186,13 @@ async function detectEnvironmentHandler() {
   };
 }
 
-// Export para el servidor MCP
-module.exports = {
-  name: 'detect_environment',
-  description: 'Detecta el entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas. Útil para prevenir errores en Windows/PowerShell vs Linux/macOS/Bash.',
-  inputSchema: {
-    type: 'object',
-    properties: {},
-    required: []
-  },
-  handler: detectEnvironmentHandler
-};
+export async function handleDetectEnvironment() {
+  const result = await detectEnvironmentHandler();
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+  };
+}
 
 // Si se ejecuta standalone
 if (import.meta.url === `file://${process.argv[1]}`) {
