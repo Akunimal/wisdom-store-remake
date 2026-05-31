@@ -1,4 +1,4 @@
-# 🛡️ wisdom-store (Lite)
+# 🛡️ wisdom-store
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
@@ -8,9 +8,9 @@
 
 **Servidor MCP minimalista + hooks para anti-alucinación en AI coding assistants.**
 
-> **Lite Version** — Only the anti-hallucination core. Everything else was removed due to overlap with other tools (Serena MCP, GSD Skills).
+> **Focused Core** — Only the anti-hallucination essentials. Everything else was removed due to overlap with other tools (Serena MCP, GSD Skills).
 >
-> **Versión Lite** — Solo el núcleo anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
+> **Núcleo Enfocado** — Solo lo esencial anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
 
 ---
 
@@ -53,6 +53,21 @@ git clone https://github.com/Akunimal/wisdom-store-remake.git
 cd wisdom-store-remake
 npm install
 ```
+
+### 🎁 Automated Setup (Recommended)
+
+Run the interactive setup script to configure everything automatically:
+
+```bash
+node scripts/setup.js
+```
+
+This script will:
+1. ✅ Detect your OS and environment
+2. ✅ Create `~/.claude` directory if needed
+3. ✅ Configure `settings.json` with MCP server and hooks
+4. ✅ Validate installation
+5. ✅ Provide next steps
 
 ---
 
@@ -279,6 +294,21 @@ git clone https://github.com/Akunimal/wisdom-store-remake.git
 cd wisdom-store-remake
 npm install
 ```
+
+### 🎁 Configuración automática (Recomendado)
+
+Ejecuta el script de setup interactivo para configurar todo automáticamente:
+
+```bash
+node scripts/setup.js
+```
+
+Este script:
+1. ✅ Detecta tu SO y entorno
+2. ✅ Crea el directorio `~/.claude` si es necesario
+3. ✅ Configura `settings.json` con el servidor MCP y hooks
+4. ✅ Valida la instalación
+5. ✅ Proporciona los siguientes pasos
 
 ---
 
