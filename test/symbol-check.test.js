@@ -49,6 +49,8 @@ test('MCP server supports compatibility tool filtering', () => {
 
   assert.ok(indexContent.includes('WISDOM_STORE_DISABLED_TOOLS'), 'Server should support disabled tool env');
   assert.ok(setupContent.includes('analyzeMcpCompatibility'), 'Setup should detect redundant tools');
+  assert.ok(setupContent.includes('applyRepoMcpRedundancyFixes'), 'Setup should automatically clean repo redundancies');
+  assert.ok(setupContent.includes('removeCodexMcpServerBlocks'), 'Setup should clean repo Codex MCP blocks');
   assert.ok(setupContent.includes('PROJECT_MCP_JSON_PATH'), 'Setup should inspect repo .mcp.json');
   assert.ok(setupContent.includes('PROJECT_CODEX_CONFIG_PATH'), 'Setup should inspect repo Codex config');
   assert.ok(setupContent.includes('get_project_overview'), 'Setup should disable redundant overview tool');
