@@ -114,6 +114,17 @@ function extractCodexMcpServerNames(configContent) {
   return names;
 }
 
+function removeCodexMcpServerBlocks(configContent, names) {
+  let nextContent = configContent;
+
+  for (const name of names) {
+    const pattern = new RegExp(`(^|\\n)\\[mcp_servers\\.${escapeRegExp(name)}\\]\\n[\\s\\S]*?(?=\\n\\[|$)`);
+    nextContent = nextContent.replace(pattern, '$1');
+  }
+
+  return nextContent.replace(/\n{3,}/g, '\n\n').trimEnd() + (nextContent.trim() ? '\n' : '');
+}
+
 const MCP_CAPABILITY_PROFILES = [
   {
     id: 'repo-overview',
@@ -128,19 +139,19 @@ function collectMcpServers(configs) {
   const servers = [];
 
   for (const [name, config] of Object.entries(configs.globalClaude.mcpServers || {})) {
-    servers.push({ name, source: 'Claude global', config });
+    servers.push({ name, source: 'Claude global', scope: 'global', configType: 'claude-json', config });
   }
   for (const [name, config] of Object.entries(configs.projectClaude.mcpServers || {})) {
-    servers.push({ name, source: 'Claude repo', config });
+    servers.push({ name, source: 'Claude repo', scope: 'repo', configType: 'project-claude-json', config });
   }
   for (const [name, config] of Object.entries(configs.projectMcpJson.mcpServers || {})) {
-    servers.push({ name, source: '.mcp.json', config });
+    servers.push({ name, source: '.mcp.json', scope: 'repo', configType: 'project-mcp-json', config });
   }
   for (const name of extractCodexMcpServerNames(configs.globalCodex)) {
-    servers.push({ name, source: 'Codex global', config: {} });
+    servers.push({ name, source: 'Codex global', scope: 'global', configType: 'codex-toml', config: {} });
   }
   for (const name of extractCodexMcpServerNames(configs.projectCodex)) {
-    servers.push({ name, source: 'Codex repo', config: {} });
+    servers.push({ name, source: 'Codex repo', scope: 'repo', configType: 'project-codex-toml', config: {} });
   }
 
   return servers;
@@ -186,6 +197,95 @@ function analyzeMcpCompatibility(servers, wisdomName) {
   };
 }
 
+function serverPreferenceScore(server) {
+  const haystack = [
+    server.name,
+    server.config?.command,
+    ...(server.config?.args || [])
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  let score = 0;
+  if (haystack.includes('serena')) score += 100;
+  if (haystack.includes('graphify')) score += 80;
+  if (/repo[-_ ]?map|codebase[-_ ]?map/.test(haystack)) score += 60;
+  if (/project[-_ ]?overview/.test(haystack)) score += 50;
+  if (server.scope === 'global') score += 5;
+
+  return score;
+}
+
+function chooseKeeper(servers) {
+  return [...servers].sort((a, b) => {
+    const scoreDiff = serverPreferenceScore(b) - serverPreferenceScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return `${a.source}:${a.name}`.localeCompare(`${b.source}:${b.name}`);
+  })[0];
+}
+
+function getRepoRedundancyRemovals(analysis) {
+  const removals = [];
+
+  for (const group of analysis.groups) {
+    const keeper = chooseKeeper(group.servers);
+    for (const server of group.servers) {
+      if (server === keeper || server.scope !== 'repo') {
+        continue;
+      }
+      removals.push({ server, keeper, profile: group.profile });
+    }
+  }
+
+  return removals;
+}
+
+function applyRepoMcpRedundancyFixes(analysis, configs) {
+  const removals = getRepoRedundancyRemovals(analysis);
+  if (removals.length === 0) {
+    return { removals, configs };
+  }
+
+  const nextConfigs = {
+    projectClaude: structuredClone(configs.projectClaude),
+    projectMcpJson: structuredClone(configs.projectMcpJson),
+    projectCodex: configs.projectCodex
+  };
+  const codexNamesToRemove = [];
+
+  for (const { server } of removals) {
+    if (server.configType === 'project-claude-json') {
+      delete nextConfigs.projectClaude.mcpServers?.[server.name];
+    }
+    if (server.configType === 'project-mcp-json') {
+      delete nextConfigs.projectMcpJson.mcpServers?.[server.name];
+    }
+    if (server.configType === 'project-codex-toml') {
+      codexNamesToRemove.push(server.name);
+    }
+  }
+
+  if (codexNamesToRemove.length > 0) {
+    nextConfigs.projectCodex = removeCodexMcpServerBlocks(nextConfigs.projectCodex, codexNamesToRemove);
+  }
+
+  return { removals, configs: nextConfigs };
+}
+
+function writeRepoMcpFixes(cleanup, originalConfigs) {
+  if (cleanup.removals.length === 0) {
+    return;
+  }
+
+  if (JSON.stringify(cleanup.configs.projectClaude) !== JSON.stringify(originalConfigs.projectClaude) && existsSync(PROJECT_SETTINGS_PATH)) {
+    writeFileSync(PROJECT_SETTINGS_PATH, JSON.stringify(cleanup.configs.projectClaude, null, 2), 'utf-8');
+  }
+  if (JSON.stringify(cleanup.configs.projectMcpJson) !== JSON.stringify(originalConfigs.projectMcpJson) && existsSync(PROJECT_MCP_JSON_PATH)) {
+    writeFileSync(PROJECT_MCP_JSON_PATH, JSON.stringify(cleanup.configs.projectMcpJson, null, 2), 'utf-8');
+  }
+  if (cleanup.configs.projectCodex !== originalConfigs.projectCodex && existsSync(PROJECT_CODEX_CONFIG_PATH)) {
+    writeFileSync(PROJECT_CODEX_CONFIG_PATH, cleanup.configs.projectCodex, 'utf-8');
+  }
+}
+
 function logMcpCompatibilityReport(servers, analysis) {
   logStep('Reviewing repo-level MCP compatibility...');
 
@@ -214,6 +314,18 @@ function logMcpCompatibilityReport(servers, analysis) {
     }
   } else {
     logSuccess('No duplicate MCP capability groups detected.');
+  }
+}
+
+function logRepoMcpCleanup(removals) {
+  if (removals.length === 0) {
+    logSuccess('No repo MCP entries needed automatic cleanup.');
+    return;
+  }
+
+  logWarn('Automatically removed redundant repo MCP entries:');
+  for (const { server, keeper, profile } of removals) {
+    logWarn(`- ${server.name} (${server.source}) overlapped ${profile}; kept ${keeper.name} (${keeper.source})`);
   }
 }
 
@@ -256,23 +368,44 @@ if (existsSync(CODEX_CONFIG_PATH)) {
   codexConfig = readFileSync(CODEX_CONFIG_PATH, 'utf-8');
 }
 
-const projectClaudeSettings = readJsonConfig(PROJECT_SETTINGS_PATH, 'repo .claude/settings.json');
-const projectMcpJson = readJsonConfig(PROJECT_MCP_JSON_PATH, 'repo .mcp.json');
-const projectCodexConfig = existsSync(PROJECT_CODEX_CONFIG_PATH)
+let projectClaudeSettings = readJsonConfig(PROJECT_SETTINGS_PATH, 'repo .claude/settings.json');
+let projectMcpJson = readJsonConfig(PROJECT_MCP_JSON_PATH, 'repo .mcp.json');
+let projectCodexConfig = existsSync(PROJECT_CODEX_CONFIG_PATH)
   ? readFileSync(PROJECT_CODEX_CONFIG_PATH, 'utf-8')
   : '';
 
 // Prepare MCP config
 const mcpName = 'wisdom-store';
 const mcpServerPath = join(ROOT_DIR, 'src', 'mcp-server', 'index.js');
-const configuredMcpServers = collectMcpServers({
+let configuredMcpServers = collectMcpServers({
   globalClaude: settings,
   projectClaude: projectClaudeSettings,
   projectMcpJson,
   globalCodex: codexConfig,
   projectCodex: projectCodexConfig
 });
-const compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
+let compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
+const cleanup = applyRepoMcpRedundancyFixes(compatibilityAnalysis, {
+  projectClaude: projectClaudeSettings,
+  projectMcpJson,
+  projectCodex: projectCodexConfig
+});
+writeRepoMcpFixes(cleanup, {
+  projectClaude: projectClaudeSettings,
+  projectMcpJson,
+  projectCodex: projectCodexConfig
+});
+projectClaudeSettings = cleanup.configs.projectClaude;
+projectMcpJson = cleanup.configs.projectMcpJson;
+projectCodexConfig = cleanup.configs.projectCodex;
+configuredMcpServers = collectMcpServers({
+  globalClaude: settings,
+  projectClaude: projectClaudeSettings,
+  projectMcpJson,
+  globalCodex: codexConfig,
+  projectCodex: projectCodexConfig
+});
+compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
 const redundantTools = compatibilityAnalysis.disabledTools;
 const mcpConfig = {
   command: 'node',
@@ -331,6 +464,7 @@ if (isMcpConfigured && isHookConfigured) {
 }
 
 logMcpCompatibilityReport(configuredMcpServers, compatibilityAnalysis);
+logRepoMcpCleanup(cleanup.removals);
 
 // 3b. Configure Codex MCP server
 logStep('Configuring ~/.codex/config.toml...');

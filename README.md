@@ -129,7 +129,7 @@ startup_timeout_sec = 15
 
 You can manually disable any Wisdom Store tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
 
-The setup also reports duplicate capability groups it finds between existing MCP servers, so repo-level MCP configuration can be cleaned up without guessing which tools overlap.
+The setup also removes redundant repo-level MCP entries automatically when a better equivalent is already configured, while leaving global MCP configs untouched so other projects are not affected.
 
 ---
 

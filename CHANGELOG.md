@@ -8,3 +8,4 @@
 - Documented the Codex MCP TOML configuration.
 - Added MCP compatibility mode so setup can disable redundant Wisdom Store tools when equivalent MCP servers are already configured.
 - Extended MCP compatibility checks across global and repo-level MCP configs, with duplicate capability reporting for existing servers.
+- Automated repo-level MCP cleanup for redundant server entries in `.mcp.json`, repo `.claude/settings.json`, and repo `.codex/config.toml`.
