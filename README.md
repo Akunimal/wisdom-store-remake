@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-5%20passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/tests-6%20passing-brightgreen)](test/)
 
 **Minimalist MCP server + hooks for anti-hallucination in AI coding assistants.**
 
@@ -117,7 +117,7 @@ Restart Codex to connect.
 
 ### Compatibility Mode
 
-`scripts/setup.js` detects configured MCP servers with overlapping repository overview/navigation tools, such as Serena or Graphify, and configures Wisdom Store to skip redundant tools:
+`scripts/setup.js` reviews MCP servers configured globally and in the current repository (`~/.claude/settings.json`, `~/.codex/config.toml`, repo `.claude/settings.json`, repo `.mcp.json`, and repo `.codex/config.toml`). When it detects overlapping repository overview/navigation tools, such as Serena or Graphify, it configures Wisdom Store to skip redundant tools:
 
 ```toml
 [mcp_servers.wisdom-store]
@@ -128,6 +128,8 @@ startup_timeout_sec = 15
 ```
 
 You can manually disable any Wisdom Store tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
+
+The setup also reports duplicate capability groups it finds between existing MCP servers, so repo-level MCP configuration can be cleaned up without guessing which tools overlap.
 
 ---
 
