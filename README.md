@@ -1,27 +1,36 @@
-# wisdom-store (Lite)
+# wisdom-store (Lite) 🛡️
 
-MCP server minimalista + hooks para anti-alucinación en AI coding assistants.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
-> **Versión Lite** — Solo el núcleo anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas.
+**MCP server minimalista + hooks para anti-alucinación en AI coding assistants.**
 
-## Qué hace
+> **Versión Lite** — Solo el núcleo anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
 
-**Indexado de proyecto** — Extracción de símbolos basada en AST (vía `@ast-grep/napi`), detección de rutas API, inventario de páginas HTML.
+## 🎯 Qué hace
 
-**Anti-alucinación** — Registro de símbolos con fuzzy matching que detecta nombres de funciones hallucinados, typos y símbolos desconocidos. Incluye un hook post-write que automáticamente advierte sobre imports hallucinados, paths de archivos, llamadas a funciones y rutas API después de cada edición.
+### Indexado de proyecto
+Extracción de símbolos basada en AST (vía `@ast-grep/napi`):
+- Funciones, clases, variables, exports, interfaces, tipos, enums
+- Detección automática de rutas API (Express, Hono, Next.js)
+- Inventario de páginas HTML
 
-**Compatible con Claude Code y Codex** — El hook funciona en ambos mediante configuración estándar.
+### 🔍 Anti-alucinación
+Registro de símbolos con **fuzzy matching** que detecta:
+- Nombres de funciones hallucinados
+- Typos en imports y llamadas
+- Símbolos desconocidos o inexistentes
+- Import paths a archivos que no existen
+- Rutas API inválidas
 
-## Tools MCP (4)
+**Hook post-write automático** que advierte después de cada edición.
 
-| Tool | Descripción |
-|------|-------------|
-| `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` |
-| `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML |
-| `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados, fuzzy match (typo?), o desconocidos |
-| `refresh_symbols` | Re-escanea y actualiza el registro de símbolos |
+### 🤖 Compatible con Claude Code y Codex
+El hook funciona en ambos mediante configuración estándar de hooks.
 
-## Install
+---
+
+## 🚀 Instalación rápida
 
 ```bash
 git clone https://github.com/InfiniQuest-App/wisdom-store.git
@@ -29,7 +38,20 @@ cd wisdom-store
 npm install
 ```
 
-## Configuración MCP
+---
+
+## 🧰 Tools MCP (4 tools esenciales)
+
+| Tool | Descripción | Cuándo usar |
+|------|-------------|-------------|
+| `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
+| `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
+| `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌ | Después de escribir código nuevo |
+| `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) |
+
+---
+
+## ⚙️ Configuración MCP
 
 Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
 
@@ -47,19 +69,22 @@ Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
 
 Reinicia Claude Code o ejecuta `/mcp` para conectar.
 
-## Hooks Anti-Alucinación
+---
+
+## 🛡️ Hooks Anti-Alucinación
 
 El directorio `hooks/` contiene scripts que se integran automáticamente con Claude Code o Codex.
 
 ### Post-Write Hallucination Check
 
 Automáticamente chequea hallucinaciones después de cada Write/Edit:
-- Import paths apuntando a archivos que no existen
-- Símbolos importados no encontrados en el registro del proyecto
-- Llamadas a funciones standalone a símbolos desconocidos
-- Rutas API no encontradas en el índice del proyecto
 
-Requiere `.wisdom/symbols.json` — ejecutá `get_project_overview` una vez para generarlo.
+- ❌ Import paths apuntando a archivos que no existen
+- ❌ Símbolos importados no encontrados en el registro del proyecto
+- ❌ Llamadas a funciones standalone a símbolos desconocidos
+- ❌ Rutas API no encontradas en el índice del proyecto
+
+**Requiere** `.wisdom/symbols.json` — ejecutá `get_project_overview` o `reindex_project` una vez para generarlo.
 
 ### Setup para Claude Code
 
@@ -92,7 +117,7 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
 
 ### Setup para Codex
 
-En tu configuración de hooks de Codex, agrega el hook post-write:
+En tu configuración de hooks de Codex:
 
 ```json
 {
@@ -104,9 +129,9 @@ En tu configuración de hooks de Codex, agrega el hook post-write:
 
 El hook lee el input JSON estándar de ambos sistemas y responde con warnings en stderr (exit code 2).
 
-## Cómo funciona
+---
 
-### Storage
+## 📁 Estructura de almacenamiento
 
 Todo son archivos planos en un directorio `.wisdom/` en la raíz del proyecto:
 
@@ -116,38 +141,65 @@ Todo son archivos planos en un directorio `.wisdom/` en la raíz del proyecto:
   index.json           # Lista de archivos + metadata
 ```
 
+---
+
+## 🔧 Cómo funciona
+
 ### Extracción AST
 
-Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Extrae funciones, clases, variables, exports, interfaces, tipos, enums. Regex fallback para Python, Go, y Rust.
+Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Regex fallback para Python, Go, y Rust.
 
-## Workflow típico
+### Soporte de lenguajes
+
+| Lenguaje | Extensiones | Extracción AST | Regex fallback |
+|----------|-------------|---------------|----------------|
+| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - |
+| TypeScript | `.ts`, `.tsx` | ✅ Full | - |
+| Python | `.py` | - | ✅ Funciones, clases, métodos |
+| Go | `.go` | - | ✅ Funciones, tipos, variables |
+| Rust | `.rs` | - | ✅ Funciones, structs, enums, traits |
+| HTML | `.html` | - | ✅ Títulos de página, estructura |
+
+---
+
+## 🔄 Workflow típico
 
 ```
 1. Empezar una tarea
-2. get_project_overview → entender el codebase
-3. Trabajar en la tarea
-4. check_symbols después de escribir código → detectar hallucinations
-5. Si check_symbols reporta unknowns: refresh_symbols para actualizar el registro
+   └─> get_project_overview → entender el codebase
+
+2. Trabajar en la tarea
+   └─> Escribir código...
+
+3. check_symbols (automático via hook post-write)
+   ├─> ✅ Símbolos confirmados → continuar
+   ├─> ⚠️ Fuzzy match → posible typo, revisar
+   └─> ❌ Unknowns → verificar si es hallucination o símbolo nuevo
+
+4. Si hay unknowns legítimos (símbolos nuevos)
+   └─> refresh_symbols → actualizar el registro
 ```
 
-El hook post-write hace el paso 4 automáticamente después de cada Write/Edit.
+**El hook post-write hace el paso 3 automáticamente** después de cada Write/Edit.
 
-## Soporte de lenguajes
+---
 
-| Lenguaje | Extracción AST | Regex fallback |
-|----------|---------------|----------------|
-| JavaScript (.js, .mjs, .cjs, .jsx) | Full | - |
-| TypeScript (.ts, .tsx) | Full | - |
-| Python (.py) | - | Funciones, clases, métodos |
-| Go (.go) | - | Funciones, tipos, variables |
-| Rust (.rs) | - | Funciones, structs, enums, traits |
-| HTML (.html) | - | Títulos de página, estructura |
-
-## Requisitos
+## 📦 Requisitos
 
 - Node.js 18+
 - Claude Code o Codex (para hooks)
+- Git (opcional, para versionado del directorio `.wisdom/`)
 
-## License
+---
+
+## 🧪 Tests
+
+```bash
+npm test
+```
+
+---
+
+## 📝 License
 
 MIT
