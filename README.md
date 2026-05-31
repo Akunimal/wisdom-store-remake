@@ -71,10 +71,11 @@ This script will:
 
 ---
 
-## 🧰 MCP Tools (4 essential tools)
+## 🧰 MCP Tools (5 essential tools)
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
+| `detect_environment` | **NEW**: Detecta tu entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
@@ -193,6 +194,67 @@ Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Regex f
 | SQL | `.sql` | - | ✅ | tables, views, functions, procedures |
 | YAML | `.yaml`, `.yml` | - | ✅ | top-level keys (config variables) |
 | HTML | `.html` | - | ✅ | page titles, script dependencies, inline functions |
+
+---
+
+## 🖥️ Environment Detection (NEW in v0.5.0)
+
+The `detect_environment` tool helps prevent cross-platform command errors by analyzing your system:
+
+**What it detects:**
+- **OS**: Windows, macOS, Linux (with version)
+- **Shell**: PowerShell, cmd.exe, Git Bash, WSL, Bash, Zsh
+- **Package Managers**: npm, yarn, pnpm, bun, pip, poetry, brew, apt, etc.
+- **Available alternatives**: Suggests Git Bash or WSL on Windows for Unix compatibility
+
+**Anti-error rules provided:**
+- Command equivalents (e.g., `ls` → `Get-ChildItem` in PowerShell)
+- Path format differences (`~/` vs `%USERPROFILE%`)
+- Syntax warnings (redirection, exports, sourcing)
+- Critical recommendations for Windows users
+
+**Example output on Windows with PowerShell:**
+```json
+{
+  "system": {
+    "os": "Windows",
+    "osVersion": "10.0.19045",
+    "arch": "x64",
+    "nodeVersion": "v20.11.0"
+  },
+  "shell": {
+    "current": "PowerShell",
+    "recommended": "Git Bash",
+    "available": ["PowerShell", "Git Bash"],
+    "warnings": [
+      "PowerShell usa sintaxis diferente a Bash (ej: | Out-File en vez de >)",
+      "Comandos Unix como ls, cat, grep pueden no estar disponibles",
+      "Usa Git Bash o WSL para compatibilidad con tutoriales de Linux/macOS"
+    ]
+  },
+  "rules": {
+    "commands": {
+      "ls": "Usa \"Get-ChildItem\" o \"gci\" en PowerShell, o \"ls\" en Git Bash/WSL",
+      "cat": "Usa \"Get-Content\" o \"gc\" en PowerShell, o \"cat\" en Git Bash/WSL",
+      "rm -rf": "PELIGROSO en PowerShell. Usa \"Remove-Item -Recurse -Force\" o hazlo desde Git Bash"
+    }
+  },
+  "recommendations": [
+    "⚠️ PowerShell usa sintaxis diferente a Bash...",
+    "✅ 3 package managers disponibles",
+    "✅ Entorno compatible con la mayoría de herramientas"
+  ]
+}
+```
+
+**Usage:**
+```bash
+# Call via MCP
+/detect_environment
+
+# Or standalone
+node src/mcp-server/tools/detect-environment.js
+```
 
 ---
 

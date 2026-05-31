@@ -35,19 +35,29 @@ import {
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 
-// Core anti-hallucination tools only
+// Core anti-hallucination tools + environment detection
 import { handleReindexProject } from './tools/reindex-project.js';
 import { handleGetProjectOverview } from './tools/get-project-overview.js';
 import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
+import { handleDetectEnvironment } from './tools/detect-environment.js';
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.4.0-lite' },
+  { name: 'wisdom-store', version: '0.5.0' },
   { capabilities: { tools: {} } }
 );
 
-// Tool definitions - Core anti-hallucination only
+// Tool definitions - Core anti-hallucination + environment detection
 const TOOLS = [
+  {
+    name: 'detect_environment',
+    description: 'Detecta tu entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas. Especialmente útil en Windows para prevenir errores de PowerShell vs Bash. Ejecuta esto al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
   {
     name: 'reindex_project',
     description: 'Scan the project and build a symbol registry. Extracts functions, classes, variables, exports, and API routes from all code files. Creates .wisdom/symbols.json. Run this after major refactors or when check_symbols reports unknown symbols that should exist.',
@@ -137,6 +147,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
+      case 'detect_environment':
+        return await handleDetectEnvironment(args);
       case 'reindex_project':
         return await handleReindexProject(args);
       case 'get_project_overview':
