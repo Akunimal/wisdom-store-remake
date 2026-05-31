@@ -60,13 +60,16 @@ function tomlString(value) {
   return `"${value.replace(/\\/g, '/').replace(/"/g, '\\"')}"`;
 }
 
-function upsertCodexMcpServer(configContent, name, serverPath) {
+function upsertCodexMcpServer(configContent, name, serverPath, disabledTools = []) {
   const block = [
     `[mcp_servers.${name}]`,
     'command = "node"',
     `args = [${tomlString(serverPath)}]`,
+    disabledTools.length > 0
+      ? `env = { WISDOM_STORE_DISABLED_TOOLS = ${tomlString(disabledTools.join(','))} }`
+      : null,
     'startup_timeout_sec = 15'
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const pattern = new RegExp(`(^|\\n)\\[mcp_servers\\.${escapeRegExp(name)}\\]\\n[\\s\\S]*?(?=\\n\\[|$)`);
 
@@ -83,6 +86,48 @@ function hookEntryIncludes(entry, value) {
     return entry.includes(value);
   }
   return JSON.stringify(entry).includes(value);
+}
+
+function extractCodexMcpServerNames(configContent) {
+  const names = [];
+  const tablePattern = /^\s*\[mcp_servers\.([^\]]+)\]\s*$/gm;
+  let match;
+  while ((match = tablePattern.exec(configContent)) !== null) {
+    names.push(match[1].replace(/^"|"$/g, ''));
+  }
+  return names;
+}
+
+const COMPATIBILITY_PROFILES = [
+  {
+    namePattern: /(serena|graphify|repo[-_ ]?map|codebase[-_ ]?map|project[-_ ]?overview)/i,
+    tools: ['get_project_overview'],
+    reason: 'repo overview/symbol navigation'
+  }
+];
+
+function detectRedundantTools(claudeSettings, codexConfig, wisdomName) {
+  const serverNames = new Set([
+    ...Object.keys(claudeSettings.mcpServers || {}),
+    ...extractCodexMcpServerNames(codexConfig)
+  ]);
+  const disabledTools = new Set();
+
+  for (const serverName of serverNames) {
+    if (serverName === wisdomName) {
+      continue;
+    }
+
+    for (const profile of COMPATIBILITY_PROFILES) {
+      if (profile.namePattern.test(serverName)) {
+        for (const tool of profile.tools) {
+          disabledTools.add(tool);
+        }
+      }
+    }
+  }
+
+  return [...disabledTools].sort();
 }
 
 // 1. Detect Environment
@@ -119,13 +164,21 @@ if (existsSync(SETTINGS_PATH)) {
   }
 }
 
+let codexConfig = '';
+if (existsSync(CODEX_CONFIG_PATH)) {
+  codexConfig = readFileSync(CODEX_CONFIG_PATH, 'utf-8');
+}
+
 // Prepare MCP config
 const mcpName = 'wisdom-store';
 const mcpServerPath = join(ROOT_DIR, 'src', 'mcp-server', 'index.js');
+const redundantTools = detectRedundantTools(settings, codexConfig, mcpName);
 const mcpConfig = {
   command: 'node',
   args: [mcpServerPath],
-  env: {}
+  env: redundantTools.length > 0
+    ? { WISDOM_STORE_DISABLED_TOOLS: redundantTools.join(',') }
+    : {}
 };
 
 // Prepare Hooks
@@ -143,7 +196,8 @@ if (!settings.hooks) settings.hooks = {};
 
 // Check if already configured
 const isMcpConfigured = settings.mcpServers[mcpName]?.command === 'node' && 
-                        settings.mcpServers[mcpName].args?.some(arg => arg.includes('index.js'));
+                        settings.mcpServers[mcpName].args?.some(arg => arg.includes('index.js')) &&
+                        (settings.mcpServers[mcpName].env?.WISDOM_STORE_DISABLED_TOOLS || '') === (mcpConfig.env.WISDOM_STORE_DISABLED_TOOLS || '');
 const isHookConfigured = settings.hooks.PostToolUse?.some(h => hookEntryIncludes(h, 'post-write-symbol-check.sh'));
 
 if (isMcpConfigured && isHookConfigured) {
@@ -175,6 +229,10 @@ if (isMcpConfigured && isHookConfigured) {
   }
 }
 
+if (redundantTools.length > 0) {
+  logWarn(`Compatibility mode: disabling redundant Wisdom Store tools: ${redundantTools.join(', ')}`);
+}
+
 // 3b. Configure Codex MCP server
 logStep('Configuring ~/.codex/config.toml...');
 const codexDir = dirname(CODEX_CONFIG_PATH);
@@ -183,13 +241,8 @@ if (!existsSync(codexDir)) {
   logSuccess('Created ~/.codex directory');
 }
 
-let codexConfig = '';
-if (existsSync(CODEX_CONFIG_PATH)) {
-  codexConfig = readFileSync(CODEX_CONFIG_PATH, 'utf-8');
-}
-
 try {
-  const nextConfig = upsertCodexMcpServer(codexConfig, mcpName, mcpServerPath);
+  const nextConfig = upsertCodexMcpServer(codexConfig, mcpName, mcpServerPath, redundantTools);
   if (nextConfig !== codexConfig) {
     writeFileSync(CODEX_CONFIG_PATH, nextConfig, 'utf-8');
     logSuccess('config.toml updated successfully');

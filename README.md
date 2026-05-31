@@ -115,6 +115,20 @@ startup_timeout_sec = 15
 
 Restart Codex to connect.
 
+### Compatibility Mode
+
+`scripts/setup.js` detects configured MCP servers with overlapping repository overview/navigation tools, such as Serena or Graphify, and configures Wisdom Store to skip redundant tools:
+
+```toml
+[mcp_servers.wisdom-store]
+command = "node"
+args = ["/path/to/wisdom-store-remake/src/mcp-server/index.js"]
+env = { WISDOM_STORE_DISABLED_TOOLS = "get_project_overview" }
+startup_timeout_sec = 15
+```
+
+You can manually disable any Wisdom Store tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
+
 ---
 
 ## 🛡️ Anti-Hallucination Hooks
