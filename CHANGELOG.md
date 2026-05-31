@@ -7,3 +7,4 @@
 - Updated `scripts/setup.js` to also configure Codex MCP in `~/.codex/config.toml` with `startup_timeout_sec = 15`.
 - Documented the Codex MCP TOML configuration.
 - Added MCP compatibility mode so setup can disable redundant Wisdom Store tools when equivalent MCP servers are already configured.
+- Extended MCP compatibility checks across global and repo-level MCP configs, with duplicate capability reporting for existing servers.

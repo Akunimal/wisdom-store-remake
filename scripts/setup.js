@@ -21,6 +21,9 @@ const ROOT_DIR = join(__dirname, '..');
 const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 const SETTINGS_PATH = join(homeDir, '.claude', 'settings.json');
 const CODEX_CONFIG_PATH = join(homeDir, '.codex', 'config.toml');
+const PROJECT_SETTINGS_PATH = join(ROOT_DIR, '.claude', 'settings.json');
+const PROJECT_MCP_JSON_PATH = join(ROOT_DIR, '.mcp.json');
+const PROJECT_CODEX_CONFIG_PATH = join(ROOT_DIR, '.codex', 'config.toml');
 
 // Colors for output
 const colors = {
@@ -88,6 +91,19 @@ function hookEntryIncludes(entry, value) {
   return JSON.stringify(entry).includes(value);
 }
 
+function readJsonConfig(filePath, label) {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    logWarn(`Could not parse ${label}; skipping it for MCP compatibility detection.`);
+    return {};
+  }
+}
+
 function extractCodexMcpServerNames(configContent) {
   const names = [];
   const tablePattern = /^\s*\[mcp_servers\.([^\]]+)\]\s*$/gm;
@@ -98,36 +114,107 @@ function extractCodexMcpServerNames(configContent) {
   return names;
 }
 
-const COMPATIBILITY_PROFILES = [
+const MCP_CAPABILITY_PROFILES = [
   {
+    id: 'repo-overview',
+    label: 'repository overview/navigation',
     namePattern: /(serena|graphify|repo[-_ ]?map|codebase[-_ ]?map|project[-_ ]?overview)/i,
     tools: ['get_project_overview'],
     reason: 'repo overview/symbol navigation'
   }
 ];
 
-function detectRedundantTools(claudeSettings, codexConfig, wisdomName) {
-  const serverNames = new Set([
-    ...Object.keys(claudeSettings.mcpServers || {}),
-    ...extractCodexMcpServerNames(codexConfig)
-  ]);
-  const disabledTools = new Set();
+function collectMcpServers(configs) {
+  const servers = [];
 
-  for (const serverName of serverNames) {
-    if (serverName === wisdomName) {
-      continue;
+  for (const [name, config] of Object.entries(configs.globalClaude.mcpServers || {})) {
+    servers.push({ name, source: 'Claude global', config });
+  }
+  for (const [name, config] of Object.entries(configs.projectClaude.mcpServers || {})) {
+    servers.push({ name, source: 'Claude repo', config });
+  }
+  for (const [name, config] of Object.entries(configs.projectMcpJson.mcpServers || {})) {
+    servers.push({ name, source: '.mcp.json', config });
+  }
+  for (const name of extractCodexMcpServerNames(configs.globalCodex)) {
+    servers.push({ name, source: 'Codex global', config: {} });
+  }
+  for (const name of extractCodexMcpServerNames(configs.projectCodex)) {
+    servers.push({ name, source: 'Codex repo', config: {} });
+  }
+
+  return servers;
+}
+
+function profileMatchesServer(profile, server) {
+  const haystack = [
+    server.name,
+    server.config?.command,
+    ...(server.config?.args || [])
+  ].filter(Boolean).join(' ');
+
+  return profile.namePattern.test(haystack);
+}
+
+function analyzeMcpCompatibility(servers, wisdomName) {
+  const disabledTools = new Set();
+  const groups = [];
+
+  for (const profile of MCP_CAPABILITY_PROFILES) {
+    const matches = servers
+      .filter((server) => server.name !== wisdomName)
+      .filter((server) => profileMatchesServer(profile, server));
+
+    if (matches.length > 0) {
+      for (const tool of profile.tools) {
+        disabledTools.add(tool);
+      }
     }
 
-    for (const profile of COMPATIBILITY_PROFILES) {
-      if (profile.namePattern.test(serverName)) {
-        for (const tool of profile.tools) {
-          disabledTools.add(tool);
-        }
-      }
+    if (matches.length > 1) {
+      groups.push({
+        profile: profile.label,
+        reason: profile.reason,
+        servers: matches
+      });
     }
   }
 
-  return [...disabledTools].sort();
+  return {
+    disabledTools: [...disabledTools].sort(),
+    groups
+  };
+}
+
+function logMcpCompatibilityReport(servers, analysis) {
+  logStep('Reviewing repo-level MCP compatibility...');
+
+  if (servers.length === 0) {
+    log('No existing MCP servers found in global or repo configs.');
+  } else {
+    const uniqueServers = new Map();
+    for (const server of servers) {
+      const key = `${server.name} (${server.source})`;
+      uniqueServers.set(key, server);
+    }
+    log(`Found ${uniqueServers.size} configured MCP server entries across global and repo configs.`);
+  }
+
+  if (analysis.disabledTools.length > 0) {
+    logWarn(`Compatibility mode: disabling redundant Wisdom Store tools: ${analysis.disabledTools.join(', ')}`);
+  } else {
+    logSuccess('No Wisdom Store tool overlap detected.');
+  }
+
+  if (analysis.groups.length > 0) {
+    logWarn('Existing MCP redundancy groups detected:');
+    for (const group of analysis.groups) {
+      const names = group.servers.map((server) => `${server.name} (${server.source})`).join(', ');
+      logWarn(`- ${group.profile}: ${names}`);
+    }
+  } else {
+    logSuccess('No duplicate MCP capability groups detected.');
+  }
 }
 
 // 1. Detect Environment
@@ -169,10 +256,24 @@ if (existsSync(CODEX_CONFIG_PATH)) {
   codexConfig = readFileSync(CODEX_CONFIG_PATH, 'utf-8');
 }
 
+const projectClaudeSettings = readJsonConfig(PROJECT_SETTINGS_PATH, 'repo .claude/settings.json');
+const projectMcpJson = readJsonConfig(PROJECT_MCP_JSON_PATH, 'repo .mcp.json');
+const projectCodexConfig = existsSync(PROJECT_CODEX_CONFIG_PATH)
+  ? readFileSync(PROJECT_CODEX_CONFIG_PATH, 'utf-8')
+  : '';
+
 // Prepare MCP config
 const mcpName = 'wisdom-store';
 const mcpServerPath = join(ROOT_DIR, 'src', 'mcp-server', 'index.js');
-const redundantTools = detectRedundantTools(settings, codexConfig, mcpName);
+const configuredMcpServers = collectMcpServers({
+  globalClaude: settings,
+  projectClaude: projectClaudeSettings,
+  projectMcpJson,
+  globalCodex: codexConfig,
+  projectCodex: projectCodexConfig
+});
+const compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
+const redundantTools = compatibilityAnalysis.disabledTools;
 const mcpConfig = {
   command: 'node',
   args: [mcpServerPath],
@@ -229,9 +330,7 @@ if (isMcpConfigured && isHookConfigured) {
   }
 }
 
-if (redundantTools.length > 0) {
-  logWarn(`Compatibility mode: disabling redundant Wisdom Store tools: ${redundantTools.join(', ')}`);
-}
+logMcpCompatibilityReport(configuredMcpServers, compatibilityAnalysis);
 
 // 3b. Configure Codex MCP server
 logStep('Configuring ~/.codex/config.toml...');

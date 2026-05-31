@@ -48,7 +48,9 @@ test('MCP server supports compatibility tool filtering', () => {
   const setupContent = fs.readFileSync(setupPath, 'utf8');
 
   assert.ok(indexContent.includes('WISDOM_STORE_DISABLED_TOOLS'), 'Server should support disabled tool env');
-  assert.ok(setupContent.includes('detectRedundantTools'), 'Setup should detect redundant tools');
+  assert.ok(setupContent.includes('analyzeMcpCompatibility'), 'Setup should detect redundant tools');
+  assert.ok(setupContent.includes('PROJECT_MCP_JSON_PATH'), 'Setup should inspect repo .mcp.json');
+  assert.ok(setupContent.includes('PROJECT_CODEX_CONFIG_PATH'), 'Setup should inspect repo Codex config');
   assert.ok(setupContent.includes('get_project_overview'), 'Setup should disable redundant overview tool');
 });
 
