@@ -1,7 +1,7 @@
-# 🛡️ AA MCP (Anti-Hallucination MCP)
+# 🛡️ Anti-Hallucination-MCP
 
-[![CI](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/ci.yml/badge.svg)](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/codeql.yml/badge.svg)](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/codeql.yml)
+[![CI](https://github.com/Akunimal/Anti-Hallucination-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Akunimal/Anti-Hallucination-MCP/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Akunimal/Anti-Hallucination-MCP/actions/workflows/codeql.yml/badge.svg)](https://github.com/Akunimal/Anti-Hallucination-MCP/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
@@ -13,9 +13,9 @@
 >
 > **Núcleo Enfocado** — Solo lo esencial anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
 
-### 🔀 About AA MCP
+### 🔀 About Anti-Hallucination-MCP
 
-AA MCP is a focused, high-performance server stripped down to **4 essential anti-hallucination tools**. It provides pure, uncompromising anti-hallucination capabilities without redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
+Anti-Hallucination-MCP is a focused, high-performance server stripped down to **4 essential anti-hallucination tools**. It provides pure, uncompromising anti-hallucination capabilities without redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale and design decisions.
 
@@ -56,8 +56,8 @@ The MCP server works with Claude Code and Codex. The post-write hook is installe
 ## 🚀 Quick Installation
 
 ```bash
-git clone https://github.com/Akunimal/wisdom-store-remake.git
-cd wisdom-store-remake
+git clone https://github.com/Akunimal/Anti-Hallucination-MCP.git
+cd Anti-Hallucination-MCP
 npm install
 ```
 
@@ -66,8 +66,8 @@ npm install
 Run the setup script from the project you want to configure, or pass `--project` explicitly:
 
 ```bash
-node /path/to/wisdom-store-remake/scripts/setup.js
-node /path/to/wisdom-store-remake/scripts/setup.js --project /path/to/target-project
+node /path/to/Anti-Hallucination-MCP/scripts/setup.js
+node /path/to/Anti-Hallucination-MCP/scripts/setup.js --project /path/to/target-project
 ```
 
 This script will:
@@ -101,7 +101,7 @@ Add to your `~/.claude/settings.json` or project's `.mcp.json`:
   "mcpServers": {
     "wisdom-store": {
       "command": "node",
-      "args": ["/path/to/wisdom-store-remake/src/mcp-server/index.js"],
+      "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
       "env": {}
     }
   }
@@ -117,7 +117,7 @@ Add to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.wisdom-store]
 command = "node"
-args = ["/path/to/wisdom-store-remake/src/mcp-server/index.js"]
+args = ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"]
 startup_timeout_sec = 15
 ```
 
@@ -130,7 +130,7 @@ Restart Codex to connect.
 ```toml
 [mcp_servers.wisdom-store]
 command = "node"
-args = ["/path/to/wisdom-store-remake/src/mcp-server/index.js"]
+args = ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"]
 env = { WISDOM_STORE_DISABLED_TOOLS = "get_project_overview" }
 startup_timeout_sec = 15
 ```
@@ -168,7 +168,7 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
         "matcher": "Write",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
+          "command": "/path/to/Anti-Hallucination-MCP/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       },
@@ -176,7 +176,7 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
         "matcher": "Edit",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
+          "command": "/path/to/Anti-Hallucination-MCP/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       }
@@ -192,7 +192,7 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 ```json
 {
   "hooks": {
-    "post_write": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh"
+    "post_write": "/path/to/Anti-Hallucination-MCP/hooks/post-write-symbol-check.sh"
   }
 }
 ```
@@ -390,8 +390,8 @@ El hook funciona en ambos mediante configuración estándar de hooks.
 ## 🚀 Instalación rápida
 
 ```bash
-git clone https://github.com/Akunimal/wisdom-store-remake.git
-cd wisdom-store-remake
+git clone https://github.com/Akunimal/Anti-Hallucination-MCP.git
+cd Anti-Hallucination-MCP
 npm install
 ```
 
@@ -432,7 +432,7 @@ Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
   "mcpServers": {
     "wisdom-store": {
       "command": "node",
-      "args": ["/path/to/wisdom-store-remake/src/mcp-server/index.js"],
+      "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
       "env": {}
     }
   }
@@ -470,7 +470,7 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
         "matcher": "Write",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
+          "command": "/path/to/Anti-Hallucination-MCP/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       },
@@ -478,7 +478,7 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
         "matcher": "Edit",
         "hooks": [{
           "type": "command",
-          "command": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh",
+          "command": "/path/to/Anti-Hallucination-MCP/hooks/post-write-symbol-check.sh",
           "timeout": 10
         }]
       }
@@ -494,7 +494,7 @@ En tu configuración de hooks de Codex:
 ```json
 {
   "hooks": {
-    "post_write": "/path/to/wisdom-store-remake/hooks/post-write-symbol-check.sh"
+    "post_write": "/path/to/Anti-Hallucination-MCP/hooks/post-write-symbol-check.sh"
   }
 }
 ```
@@ -605,7 +605,7 @@ MIT
 
 ## 🔗 Links / Enlaces
 
-- **Repository / Repositorio:** https://github.com/Akunimal/wisdom-store-remake
+- **Repository / Repositorio:** https://github.com/Akunimal/Anti-Hallucination-MCP
 - **Architecture / Arquitectura:** [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Examples / Ejemplos:** [examples/](examples/)
