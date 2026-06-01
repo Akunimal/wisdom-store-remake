@@ -68,52 +68,36 @@ export function filterGitStatus(output) {
 }
 
 /**
- * Compress git diff output into a compact summary.
- * Shows only file-level stats, not full diffs.
+ * Compress git diff output while preserving fidelity.
+ * RTK philosophy: strip noise (index lines), but keep the actual diff content.
+ * If args indicate a summary format (--stat, --name-only), pass through.
  */
-export function filterGitDiff(output) {
+export function filterGitDiff(output, args = []) {
+  if (!output.trim()) return { compressed: 'no changes', savings: 100 };
+
+  const isSummary = args.some(a => 
+    a === '--stat' || a === '--shortstat' || a === '--numstat' || 
+    a === '--name-only' || a === '--name-status' || a === '--summary'
+  );
+
+  if (isSummary) {
+    // Already a summarized format, just pass through
+    return { compressed: output.trim(), savings: 0 };
+  }
+
+  // Normal diff: nearly lossless. We only strip useless metadata like index hashes
   const lines = output.split('\n');
-  if (!lines.length || !output.trim()) return { compressed: 'no changes', savings: 100 };
-
-  const files = [];
-  let totalAdd = 0;
-  let totalDel = 0;
-  let currentFile = null;
-  let currentAdd = 0;
-  let currentDel = 0;
-
+  const kept = [];
+  
   for (const line of lines) {
-    if (line.startsWith('diff --git')) {
-      if (currentFile) {
-        files.push({ file: currentFile, add: currentAdd, del: currentDel });
-      }
-      const match = line.match(/b\/(.+)$/);
-      currentFile = match ? match[1] : 'unknown';
-      currentAdd = 0;
-      currentDel = 0;
-    } else if (line.startsWith('+') && !line.startsWith('+++')) {
-      currentAdd++;
-      totalAdd++;
-    } else if (line.startsWith('-') && !line.startsWith('---')) {
-      currentDel++;
-      totalDel++;
+    // Skip noisy git index hashes that AIs don't need: 'index 85057a5..3c73eac 100644'
+    if (line.startsWith('index ') && line.match(/^index [a-f0-9]+\.\.[a-f0-9]+/)) {
+      continue;
     }
-  }
-  if (currentFile) {
-    files.push({ file: currentFile, add: currentAdd, del: currentDel });
+    kept.push(line);
   }
 
-  if (!files.length) return { compressed: 'no changes', savings: 100 };
-
-  const fileLines = files.map(f => {
-    const stats = [];
-    if (f.add) stats.push(`+${f.add}`);
-    if (f.del) stats.push(`-${f.del}`);
-    return `  ${f.file} (${stats.join(' ')})`;
-  });
-
-  const summary = `${files.length} files changed, +${totalAdd} -${totalDel}`;
-  const compressed = `${summary}\n${fileLines.join('\n')}`;
+  const compressed = kept.join('\n').trim();
   const savings = Math.round((1 - compressed.length / output.length) * 100);
   return { compressed, savings: Math.max(0, savings) };
 }
@@ -208,7 +192,7 @@ export function filterGit(output, args) {
   const subcommand = (args[0] || '').toLowerCase();
   switch (subcommand) {
     case 'status': return filterGitStatus(output);
-    case 'diff': return filterGitDiff(output);
+    case 'diff': return filterGitDiff(output, args);
     case 'log': return filterGitLog(output);
     case 'push':
     case 'pull':
