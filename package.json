@@ -1,5 +1,5 @@
 {
-  "name": "wisdom-store-remake",
+  "name": "anti-hallucination-mcp",
   "version": "0.5.0",
   "description": "Minimalist MCP server + hooks for anti-hallucination in AI coding assistants. Detects hallucinated symbols, typos in imports, and invalid API routes via AST-based fuzzy matching.",
   "type": "module",
@@ -7,7 +7,7 @@
   "main": "src/mcp-server/index.js",
   "bin": {
     "wisdom-store": "src/mcp-server/index.js",
-    "wisdom-store-remake": "src/mcp-server/index.js"
+    "anti-hallucination-mcp": "src/mcp-server/index.js"
   },
   "scripts": {
     "start": "node src/mcp-server/index.js",
@@ -26,16 +26,16 @@
     "tree-sitter"
   ],
   "author": "Akunimal",
-  "homepage": "https://github.com/Akunimal/wisdom-store-remake#readme",
+  "homepage": "https://github.com/Akunimal/Anti-Hallucination-MCP#readme",
   "bugs": {
-    "url": "https://github.com/Akunimal/wisdom-store-remake/issues"
+    "url": "https://github.com/Akunimal/Anti-Hallucination-MCP/issues"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Akunimal/wisdom-store-remake.git"
+    "url": "git+https://github.com/Akunimal/Anti-Hallucination-MCP.git"
   },
   "files": [
     "src/",
