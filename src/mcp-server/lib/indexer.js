@@ -179,6 +179,20 @@ function extractWithAst(filePath, content, lang, symbols, lineOffset = 0) {
   }
 }
 
+function extractNamesFromNode(nameNode) {
+  const kind = nameNode.kind();
+  const nodes = [];
+  if (kind === 'identifier') {
+    nodes.push(nameNode);
+  } else if (kind === 'array_pattern' || kind === 'object_pattern') {
+    const ids = nameNode.findAll({ rule: { kind: 'identifier' } });
+    for (const id of ids) nodes.push(id);
+    const shorthands = nameNode.findAll({ rule: { kind: 'shorthand_property_identifier_pattern' } });
+    for (const sh of shorthands) nodes.push(sh);
+  }
+  return nodes;
+}
+
 function extractAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
   const isTS = (lang === Lang.TypeScript || lang === Lang.Tsx);
 
@@ -196,14 +210,18 @@ function extractAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
     for (const decl of declarators) {
       const nameNode = decl.field('name');
       const valueNode = decl.field('value');
-      if (!nameNode || !valueNode) continue;
+      if (!nameNode) continue;
 
-      const valueKind = valueNode.kind();
-      if (valueKind === 'arrow_function' || valueKind === 'function_expression') {
-        addSymbol(symbols.functions, nameNode.text(), filePath, nameNode.range().start.line + 1 + lineOffset);
-      } else {
-        // Regular variable
-        addSymbol(symbols.variables, nameNode.text(), filePath, nameNode.range().start.line + 1 + lineOffset);
+      const valueKind = valueNode?.kind();
+      const extractedNodes = extractNamesFromNode(nameNode);
+
+      for (const nNode of extractedNodes) {
+        if (valueKind === 'arrow_function' || valueKind === 'function_expression') {
+          addSymbol(symbols.functions, nNode.text(), filePath, nNode.range().start.line + 1 + lineOffset);
+        } else {
+          // Regular variable
+          addSymbol(symbols.variables, nNode.text(), filePath, nNode.range().start.line + 1 + lineOffset);
+        }
       }
     }
   }
@@ -218,10 +236,14 @@ function extractAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
       if (!nameNode) continue;
 
       const valueKind = valueNode?.kind();
-      if (valueKind === 'arrow_function' || valueKind === 'function_expression') {
-        addSymbol(symbols.functions, nameNode.text(), filePath, nameNode.range().start.line + 1 + lineOffset);
-      } else {
-        addSymbol(symbols.variables, nameNode.text(), filePath, nameNode.range().start.line + 1 + lineOffset);
+      const extractedNodes = extractNamesFromNode(nameNode);
+
+      for (const nNode of extractedNodes) {
+        if (valueKind === 'arrow_function' || valueKind === 'function_expression') {
+          addSymbol(symbols.functions, nNode.text(), filePath, nNode.range().start.line + 1 + lineOffset);
+        } else {
+          addSymbol(symbols.variables, nNode.text(), filePath, nNode.range().start.line + 1 + lineOffset);
+        }
       }
     }
   }
@@ -277,7 +299,11 @@ function extractAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
         const declarators = declaration.findAll({ rule: { kind: 'variable_declarator' } });
         for (const decl of declarators) {
           const n = decl.field('name');
-          if (n) addSymbol(symbols.exports, n.text(), filePath, n.range().start.line + 1 + lineOffset);
+          if (!n) continue;
+          const extractedNodes = extractNamesFromNode(n);
+          for (const nNode of extractedNodes) {
+            addSymbol(symbols.exports, nNode.text(), filePath, nNode.range().start.line + 1 + lineOffset);
+          }
         }
       }
     }
