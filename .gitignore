@@ -50,3 +50,10 @@ Thumbs.db
 
 # Wisdom Store data (project-specific, not tracked)
 .wisdom/
+
+# AI Assistants
+.serena/
+.claude/
+.cursor/
+.windsurf/
+.codex/
