@@ -1,4 +1,4 @@
-# 🛡️ wisdom-store-remake
+# 🛡️ AA MCP (Anti-Hallucination MCP)
 
 [![CI](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/ci.yml/badge.svg)](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/codeql.yml/badge.svg)](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/codeql.yml)
@@ -13,9 +13,9 @@
 >
 > **Núcleo Enfocado** — Solo lo esencial anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
 
-### 🔀 Why this fork?
+### 🔀 About AA MCP
 
-This project is a maintained fork of [InfiniQuest-App/wisdom-store](https://github.com/InfiniQuest-App/wisdom-store). The upstream project included 24 MCP tools covering context management, wisdom storage, and archive functionality. This fork strips it down to **4 essential anti-hallucination tools** (–94% code, –83% tools), removing everything that overlaps with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
+AA MCP is a focused, high-performance server stripped down to **4 essential anti-hallucination tools**. It provides pure, uncompromising anti-hallucination capabilities without redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale and design decisions.
 
@@ -609,4 +609,4 @@ MIT
 - **Architecture / Arquitectura:** [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Examples / Ejemplos:** [examples/](examples/)
-- **Original upstream:** [InfiniQuest-App/wisdom-store](https://github.com/InfiniQuest-App/wisdom-store)
+
