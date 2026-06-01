@@ -1,0 +1,13 @@
+# .npmignore
+test/
+examples/
+.github/
+.wisdom/
+.serena/
+.gitignore
+.npmignore
+FOLK_SUMMARY.md
+ARCHITECTURE.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md

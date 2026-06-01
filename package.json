@@ -1,12 +1,13 @@
 {
-  "name": "wisdom-store",
+  "name": "wisdom-store-remake",
   "version": "0.5.0",
-  "description": "MCP server providing anti-hallucination tools for AI coding assistants",
+  "description": "Minimalist MCP server + hooks for anti-hallucination in AI coding assistants. Detects hallucinated symbols, typos in imports, and invalid API routes via AST-based fuzzy matching.",
   "type": "module",
   "license": "MIT",
   "main": "src/mcp-server/index.js",
   "bin": {
-    "wisdom-store": "src/mcp-server/index.js"
+    "wisdom-store": "src/mcp-server/index.js",
+    "wisdom-store-remake": "src/mcp-server/index.js"
   },
   "scripts": {
     "start": "node src/mcp-server/index.js",
@@ -18,15 +19,32 @@
     "claude",
     "anti-hallucination",
     "symbol-checking",
-    "model-context-protocol"
+    "model-context-protocol",
+    "codex",
+    "ai-safety",
+    "ast",
+    "tree-sitter"
   ],
+  "author": "Akunimal",
+  "homepage": "https://github.com/Akunimal/wisdom-store-remake#readme",
+  "bugs": {
+    "url": "https://github.com/Akunimal/wisdom-store-remake/issues"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/InfiniQuest-App/wisdom-store.git"
+    "url": "git+https://github.com/Akunimal/wisdom-store-remake.git"
   },
+  "files": [
+    "src/",
+    "hooks/",
+    "scripts/",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "dependencies": {
     "@ast-grep/napi": "^0.41.0",
     "@modelcontextprotocol/sdk": "^1.0.0"

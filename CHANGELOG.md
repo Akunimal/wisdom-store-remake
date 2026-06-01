@@ -1,13 +1,46 @@
 # Changelog
 
-## Unreleased
+All notable changes to this project will be documented in this file.
 
-- Fixed the MCP stdio startup failure by converting `detect-environment.js` to proper ESM exports and scoping platform detection inside the handler.
-- Removed the `jq` dependency from `hooks/post-write-symbol-check.sh`; the hook now parses JSON with Node.js.
-- Updated `scripts/setup.js` to also configure Codex MCP in `~/.codex/config.toml` with `startup_timeout_sec = 15`.
-- Documented the Codex MCP TOML configuration.
-- Added MCP compatibility mode so setup can disable redundant Wisdom Store tools when equivalent MCP servers are already configured.
-- Extended MCP compatibility checks across global and repo-level MCP configs, with duplicate capability reporting for existing servers.
-- Automated repo-level MCP cleanup for redundant server entries in `.mcp.json`, repo `.claude/settings.json`, and repo `.codex/config.toml`.
-- Hardened setup for commercial project installation with `--project`, target-repo cleanup, backups before config writes, safer Codex TOML table cleanup, integration coverage, and aligned package version metadata.
-- Fixed post-write hook false positives for imported external bindings and clarified that Codex hook setup is manual/runtime-specific.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.5.0] - 2026-06-01
+
+### Added
+- `detect_environment` tool for cross-platform command safety (OS, shell, package manager detection)
+- Automated setup script (`scripts/setup.js`) for Claude Code and Codex onboarding
+- MCP compatibility mode: setup auto-disables redundant tools when equivalent MCP servers (Serena, Graphify) are detected
+- Multi-language symbol extraction: Bash/Shell, SQL, YAML via regex
+- Codex MCP configuration support in `~/.codex/config.toml`
+- Repo-level MCP cleanup: removes redundant server entries in `.mcp.json`, `.claude/settings.json`, `.codex/config.toml`
+- Compatibility checks across global and repo-level MCP configs with duplicate capability reporting
+
+### Fixed
+- MCP stdio startup failure by converting `detect-environment.js` to proper ESM exports
+- Removed `jq` dependency from `hooks/post-write-symbol-check.sh` — now parses JSON with Node.js
+- Post-write hook false positives for imported external bindings (e.g., `fileURLToPath`, `path.basename`)
+
+### Changed
+- Setup hardened for commercial project installation with `--project` flag, backups before config writes, safer Codex TOML cleanup
+
+## [0.1.0] - 2024-12-01
+
+### Added
+- Core anti-hallucination system: `check_symbols` with fuzzy matching, `refresh_symbols`, `reindex_project`, `get_project_overview`
+- AST-based symbol extraction via `@ast-grep/napi` (tree-sitter) for JavaScript/TypeScript/TSX
+- Regex fallback extractors for Python, Go, Rust
+- Post-write hook (`hooks/post-write-symbol-check.sh`) for automatic hallucination detection after Write/Edit
+- Standalone symbol checker (`hooks/symbol-check.mjs`)
+- Compatible with Claude Code (`PostToolUse` hooks) and Codex (`post_write` hooks)
+
+### Changed
+- **Fork from InfiniQuest-App/wisdom-store**: Reduced from 24 tools to 4 essential tools (-83%)
+- Removed ~12,000 lines of redundant code (-94% reduction)
+- Eliminated 9 internal libraries overlapping with Serena MCP and GSD Skills
+- Removed all context manipulation tools (Linux-only, replaced by Claude Code's native auto-compact)
+- Removed all wisdom/memory management tools (replaced by Serena MCP's `write_memory`/`read_memory`)
+- Removed all archive/condense tools (niche functionality)
+
+[0.5.0]: https://github.com/Akunimal/wisdom-store-remake/compare/v0.1.0...v0.5.0
+[0.1.0]: https://github.com/Akunimal/wisdom-store-remake/releases/tag/v0.1.0
