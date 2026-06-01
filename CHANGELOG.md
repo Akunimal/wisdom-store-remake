@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transparent `hooks/post-command-compress.js` for automatic Claude Code output compression
 - Cross-platform support (Windows natively supported without shell script dependencies)
 
+### Fixed
+- Token compressor generic truncation aggressively stripping `git diff` output. It now completely preserves actual code changes (RTK philosophy) while stripping index noise.
+- AST Javascript/Typescript indexer failing to extract destructured variables (`const { x } = obj;`).
+
+### Changed
+- **Polyglot AST Extraction**: Removed fragile Regex fallbacks for Python, Go, and Rust. They now use exact Abstract Syntax Tree parsing via `tree-sitter` bindings (`tree-sitter-python`, `tree-sitter-go`, `tree-sitter-rust`).
+- Implemented lazy loading for dynamic languages via `@ast-grep/napi`'s `registerDynamicLanguage` so the C++ grammar binaries are loaded natively without requiring manual compilation.
+- Added `tree-sitter-*` grammars as `optionalDependencies` so installation never blocks on Windows systems missing build tools (gracefully falls back to Regex if unavailable).
 ## [0.5.0] - 2026-06-01
 
 ### Added
