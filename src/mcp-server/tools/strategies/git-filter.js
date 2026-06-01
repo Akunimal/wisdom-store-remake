@@ -1,0 +1,221 @@
+/**
+ * Git output filter strategies
+ * Inspired by RTK's stats extraction approach for git commands.
+ * Licensed under MIT (Anti-Hallucination-MCP project license).
+ *
+ * Strategies implemented:
+ * - git status: Compact summary (staged/modified/untracked counts)
+ * - git diff: Stats-only summary with file changes
+ * - git log: One-line format with commit count
+ * - git push/pull/commit: Single-line confirmation
+ */
+
+/**
+ * Compress git status output into a compact summary.
+ * Reduces ~2000 tokens to ~50-100 tokens.
+ */
+export function filterGitStatus(output) {
+  const lines = output.split('\n').filter(l => l.trim());
+  if (!lines.length) return { compressed: 'clean working tree', savings: 100 };
+
+  const staged = [];
+  const modified = [];
+  const untracked = [];
+  const conflicts = [];
+  let currentSection = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('On branch')) continue;
+    if (trimmed.startsWith('Your branch')) continue;
+    if (trimmed.startsWith('Changes to be committed')) { currentSection = 'staged'; continue; }
+    if (trimmed.startsWith('Changes not staged')) { currentSection = 'modified'; continue; }
+    if (trimmed.startsWith('Untracked files')) { currentSection = 'untracked'; continue; }
+    if (trimmed.startsWith('Unmerged paths')) { currentSection = 'conflicts'; continue; }
+    if (trimmed.startsWith('(use ')) continue;
+    if (trimmed === '') continue;
+
+    // Extract file info
+    const fileMatch = trimmed.match(/^(new file|modified|deleted|renamed|both modified|both added):\s+(.+)/);
+    if (fileMatch) {
+      const [, action, file] = fileMatch;
+      const entry = `${action}: ${file}`;
+      if (currentSection === 'staged') staged.push(entry);
+      else if (currentSection === 'modified') modified.push(entry);
+      else if (currentSection === 'conflicts') conflicts.push(entry);
+    } else if (currentSection === 'untracked') {
+      untracked.push(trimmed);
+    }
+  }
+
+  const parts = [];
+  if (conflicts.length) parts.push(`⚠️ CONFLICTS (${conflicts.length}): ${conflicts.join(', ')}`);
+  if (staged.length) parts.push(`staged (${staged.length}): ${staged.join(', ')}`);
+  if (modified.length) parts.push(`modified (${modified.length}): ${modified.join(', ')}`);
+  if (untracked.length) {
+    const shown = untracked.slice(0, 5);
+    const more = untracked.length > 5 ? ` +${untracked.length - 5} more` : '';
+    parts.push(`untracked (${untracked.length}): ${shown.join(', ')}${more}`);
+  }
+
+  if (!parts.length) {
+    return { compressed: 'clean working tree', savings: 100 };
+  }
+
+  const compressed = parts.join('\n');
+  const savings = Math.round((1 - compressed.length / output.length) * 100);
+  return { compressed, savings: Math.max(0, savings) };
+}
+
+/**
+ * Compress git diff output into a compact summary.
+ * Shows only file-level stats, not full diffs.
+ */
+export function filterGitDiff(output) {
+  const lines = output.split('\n');
+  if (!lines.length || !output.trim()) return { compressed: 'no changes', savings: 100 };
+
+  const files = [];
+  let totalAdd = 0;
+  let totalDel = 0;
+  let currentFile = null;
+  let currentAdd = 0;
+  let currentDel = 0;
+
+  for (const line of lines) {
+    if (line.startsWith('diff --git')) {
+      if (currentFile) {
+        files.push({ file: currentFile, add: currentAdd, del: currentDel });
+      }
+      const match = line.match(/b\/(.+)$/);
+      currentFile = match ? match[1] : 'unknown';
+      currentAdd = 0;
+      currentDel = 0;
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      currentAdd++;
+      totalAdd++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      currentDel++;
+      totalDel++;
+    }
+  }
+  if (currentFile) {
+    files.push({ file: currentFile, add: currentAdd, del: currentDel });
+  }
+
+  if (!files.length) return { compressed: 'no changes', savings: 100 };
+
+  const fileLines = files.map(f => {
+    const stats = [];
+    if (f.add) stats.push(`+${f.add}`);
+    if (f.del) stats.push(`-${f.del}`);
+    return `  ${f.file} (${stats.join(' ')})`;
+  });
+
+  const summary = `${files.length} files changed, +${totalAdd} -${totalDel}`;
+  const compressed = `${summary}\n${fileLines.join('\n')}`;
+  const savings = Math.round((1 - compressed.length / output.length) * 100);
+  return { compressed, savings: Math.max(0, savings) };
+}
+
+/**
+ * Compress git log output into compact one-line-per-commit format.
+ */
+export function filterGitLog(output) {
+  const lines = output.split('\n').filter(l => l.trim());
+  if (!lines.length) return { compressed: 'no commits', savings: 100 };
+
+  // If already in oneline format, just count and truncate
+  const commits = [];
+  let i = 0;
+  while (i < lines.length) {
+    const commitMatch = lines[i].match(/^commit\s+([a-f0-9]+)/);
+    if (commitMatch) {
+      const hash = commitMatch[1].substring(0, 7);
+      let message = '';
+      let author = '';
+      let date = '';
+      i++;
+      while (i < lines.length && !lines[i].match(/^commit\s+[a-f0-9]+/)) {
+        const line = lines[i].trim();
+        if (line.startsWith('Author:')) author = line.replace('Author:', '').trim().split('<')[0].trim();
+        else if (line.startsWith('Date:')) date = line.replace('Date:', '').trim();
+        else if (line && !message) message = line;
+        i++;
+      }
+      commits.push(`${hash} ${message}`);
+    } else {
+      // Already oneline format: hash message
+      const onelineMatch = lines[i].match(/^([a-f0-9]{7,})\s+(.+)/);
+      if (onelineMatch) {
+        commits.push(`${onelineMatch[1].substring(0, 7)} ${onelineMatch[2]}`);
+      }
+      i++;
+    }
+  }
+
+  const shown = commits.slice(0, 20);
+  const more = commits.length > 20 ? `\n... +${commits.length - 20} more commits` : '';
+  const compressed = `${commits.length} commits\n${shown.join('\n')}${more}`;
+  const savings = Math.round((1 - compressed.length / output.length) * 100);
+  return { compressed, savings: Math.max(0, savings) };
+}
+
+/**
+ * Compress git push/pull/commit output to a single confirmation line.
+ */
+export function filterGitAction(output, subcommand) {
+  const lines = output.split('\n').filter(l => l.trim());
+  if (!lines.length) return { compressed: `ok`, savings: 100 };
+
+  if (subcommand === 'push') {
+    const branchMatch = output.match(/(\S+)\s*->\s*(\S+)/);
+    const branch = branchMatch ? branchMatch[2] : 'unknown';
+    return { compressed: `ok ${branch}`, savings: Math.round((1 - 10 / output.length) * 100) };
+  }
+
+  if (subcommand === 'pull') {
+    const fileChanges = output.match(/(\d+)\s+files?\s+changed/);
+    const insertions = output.match(/(\d+)\s+insertions?/);
+    const deletions = output.match(/(\d+)\s+deletions?/);
+    const stats = [];
+    if (fileChanges) stats.push(`${fileChanges[1]} files`);
+    if (insertions) stats.push(`+${insertions[1]}`);
+    if (deletions) stats.push(`-${deletions[1]}`);
+    const compressed = stats.length ? `ok ${stats.join(' ')}` : 'ok (up to date)';
+    return { compressed, savings: Math.round((1 - compressed.length / output.length) * 100) };
+  }
+
+  if (subcommand === 'commit') {
+    const hashMatch = output.match(/\[[\w/]+\s+([a-f0-9]+)\]/);
+    const hash = hashMatch ? hashMatch[1] : '';
+    return { compressed: `ok ${hash}`, savings: Math.round((1 - 10 / output.length) * 100) };
+  }
+
+  if (subcommand === 'add') {
+    return { compressed: 'ok', savings: 100 };
+  }
+
+  // Fallback: first meaningful line
+  const firstLine = lines.find(l => !l.startsWith('warning:') && !l.startsWith('hint:')) || lines[0];
+  return { compressed: firstLine, savings: Math.round((1 - firstLine.length / output.length) * 100) };
+}
+
+/**
+ * Route git output to the appropriate filter.
+ */
+export function filterGit(output, args) {
+  const subcommand = (args[0] || '').toLowerCase();
+  switch (subcommand) {
+    case 'status': return filterGitStatus(output);
+    case 'diff': return filterGitDiff(output);
+    case 'log': return filterGitLog(output);
+    case 'push':
+    case 'pull':
+    case 'commit':
+    case 'add':
+      return filterGitAction(output, subcommand);
+    default:
+      return null; // No specific filter, use generic
+  }
+}

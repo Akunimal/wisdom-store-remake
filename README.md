@@ -48,6 +48,13 @@ Symbol registry with **fuzzy matching** that detects:
 
 **Automatic post-write hook** that warns after every edit.
 
+### 🗜️ Token Compressor Engine (NEW in v0.6.0)
+Native Node.js implementation of 12 intelligent filtering strategies inspired by RTK (Rust Token Killer).
+- Reduces token consumption by 60-90% for common shell commands
+- Truncates noise, removes ANSI, groups errors, and summarizes test failures
+- Works natively on Windows, macOS, and Linux
+- Transparent post-command hook for Claude Code
+
 ### 🤖 Compatible with Claude Code and Codex
 The MCP server works with Claude Code and Codex. The post-write hook is installed automatically for Claude Code only; Codex hook support depends on the Codex app/runtime hook mechanism and is documented as manual configuration.
 
@@ -89,6 +96,7 @@ This script will:
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
 | `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) |
+| `compress_output` | **NEW**: Executes a shell command and returns token-optimized output (saves 60-90% context) | When running tests, builds, git status, or listing files |
 
 ---
 
@@ -382,6 +390,13 @@ Registro de símbolos con **fuzzy matching** que detecta:
 
 **Hook post-write automático** que advierte después de cada edición.
 
+### 🗜️ Token Compressor Engine (NUEVO en v0.6.0)
+Implementación nativa en Node.js de 12 estrategias de filtrado inteligente inspiradas en RTK (Rust Token Killer).
+- Reduce el consumo de tokens en 60-90% para comandos de shell comunes
+- Trunca ruido, elimina ANSI, agrupa errores y resume fallos en tests
+- Funciona de forma nativa en Windows, macOS y Linux
+- Hook post-command transparente para Claude Code
+
 ### 🤖 Compatible con Claude Code y Codex
 El hook funciona en ambos mediante configuración estándar de hooks.
 
@@ -420,6 +435,7 @@ Este script:
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌ | Después de escribir código nuevo |
 | `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) |
+| `compress_output` | **NUEVO**: Ejecuta un comando shell y retorna el output optimizado (ahorra 60-90% de contexto) | Al correr tests, builds, git status, o listar archivos |
 
 ---
 

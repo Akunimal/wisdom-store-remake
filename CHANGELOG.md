@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-01
+
+### Added
+- **Token Compressor Engine**: Native Node.js implementation of RTK (Rust Token Killer) filtering strategies
+- `compress_output` MCP tool to execute commands and get token-optimized output
+- 12 intelligent filtering strategies (stats extraction, error focus, grouping, deduplication, JSON structure, etc.)
+- Transparent `hooks/post-command-compress.js` for automatic Claude Code output compression
+- Cross-platform support (Windows natively supported without shell script dependencies)
+
 ## [0.5.0] - 2026-06-01
 
 ### Added

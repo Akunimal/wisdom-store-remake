@@ -1,0 +1,16 @@
+> anti-hallucination-mcp@0.6.0 test
+> node --test
+
+✔ Core functionality (12ms)
+✖ Token Compressor (45ms)
+  AssertionError: expected { savings: 0 } to deeply equal { savings: 80 }
+      at TestContext.<anonymous> (test/token-compressor.test.js:12:5)
+✔ Other tests (5ms)
+
+ℹ tests 3
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 85

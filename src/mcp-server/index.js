@@ -41,6 +41,7 @@ import { handleGetProjectOverview } from './tools/get-project-overview.js';
 import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
 import { handleDetectEnvironment } from './tools/detect-environment.js';
+import { compressOutputDefinition, compressOutputHandler } from './tools/compress-output.js';
 
 function parseDisabledTools(value) {
   if (!value) {
@@ -63,7 +64,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.5.0' },
+  { name: 'wisdom-store', version: '0.6.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -155,7 +156,8 @@ const TOOLS = [
         }
       }
     }
-  }
+  },
+  compressOutputDefinition
 ];
 
 const disabledTools = parseDisabledTools(process.env.WISDOM_STORE_DISABLED_TOOLS);
@@ -187,6 +189,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await handleCheckSymbols(args);
       case 'refresh_symbols':
         return await handleRefreshSymbols(args);
+      case 'compress_output':
+        return await compressOutputHandler(args);
       default:
         return {
           content: [{ type: 'text', text: `Unknown tool: ${name}` }],
