@@ -47,6 +47,6 @@
   ],
   "dependencies": {
     "@ast-grep/napi": "^0.41.0",
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
