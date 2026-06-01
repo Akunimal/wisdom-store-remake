@@ -1,0 +1,64 @@
+name: Bug Report
+description: Report a bug or issue with Anti-Hallucination-MCP
+title: "[BUG]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the form below.
+  - type: input
+    id: version
+    attributes:
+      label: Anti-Hallucination-MCP Version
+      description: What version are you using? (e.g., 0.6.0)
+      placeholder: 0.6.0
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: AI Assistant
+      description: Which AI coding assistant are you using with this MCP?
+      options:
+        - Claude Code
+        - Codex
+        - Windsurf
+        - Cursor
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating System & Shell
+      description: E.g., Windows 10 PowerShell, macOS zsh, Ubuntu bash
+      placeholder: Windows 11 PowerShell 7
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Output
+      description: Paste any relevant logs, terminal output, or error messages.
+      render: shell
+    validations:
+      required: false
