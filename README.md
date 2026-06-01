@@ -1,8 +1,9 @@
-# 🛡️ wisdom-store
+# 🛡️ wisdom-store-remake
 
+[![CI](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/ci.yml/badge.svg)](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/codeql.yml/badge.svg)](https://github.com/Akunimal/wisdom-store-remake/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-8%20passing-brightgreen)](test/)
 
 **Minimalist MCP server + hooks for anti-hallucination in AI coding assistants.**
 
@@ -11,6 +12,12 @@
 > **Focused Core** — Only the anti-hallucination essentials. Everything else was removed due to overlap with other tools (Serena MCP, GSD Skills).
 >
 > **Núcleo Enfocado** — Solo lo esencial anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
+
+### 🔀 Why this fork?
+
+This project is a maintained fork of [InfiniQuest-App/wisdom-store](https://github.com/InfiniQuest-App/wisdom-store). The upstream project included 24 MCP tools covering context management, wisdom storage, and archive functionality. This fork strips it down to **4 essential anti-hallucination tools** (–94% code, –83% tools), removing everything that overlaps with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale and design decisions.
 
 ---
 
@@ -599,5 +606,7 @@ MIT
 ## 🔗 Links / Enlaces
 
 - **Repository / Repositorio:** https://github.com/Akunimal/wisdom-store-remake
-- **Detailed Summary / Resumen Detallado:** [FOLK_SUMMARY.md](FOLK_SUMMARY.md)
+- **Architecture / Arquitectura:** [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Examples / Ejemplos:** [examples/](examples/)
+- **Original upstream:** [InfiniQuest-App/wisdom-store](https://github.com/InfiniQuest-App/wisdom-store)

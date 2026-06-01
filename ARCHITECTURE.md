@@ -1,4 +1,4 @@
-# 🛡️ wisdom-store-lite: Sanitización del MCP Anti-Alucinación
+# 🛡️ wisdom-store-remake: Architecture & Design Decisions
 
 ## Resumen Ejecutivo
 
@@ -215,8 +215,8 @@ wisdom-store/
 ### Instalar
 
 ```bash
-git clone https://github.com/InfiniQuest-App/wisdom-store.git
-cd wisdom-store
+git clone https://github.com/Akunimal/wisdom-store-remake.git
+cd wisdom-store-remake
 npm install
 ```
 
@@ -410,10 +410,12 @@ El hook `post-write-symbol-check.sh` cambió:
 
 ---
 
-## 👥 Autor
+## 👥 Author
 
-Sanitización completada en Diciembre 2024.
+Fork maintained by [Akunimal](https://github.com/Akunimal) since December 2024.
 
-**Repositorio:** https://github.com/InfiniQuest-App/wisdom-store
+**Repository:** https://github.com/Akunimal/wisdom-store-remake
+
+**Original upstream:** https://github.com/InfiniQuest-App/wisdom-store
 
 **License:** MIT
