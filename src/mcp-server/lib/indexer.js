@@ -19,7 +19,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { parse, Lang } from '@ast-grep/napi';
+import { parse, Lang, registerDynamicLanguage } from '@ast-grep/napi';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 // Directories to always skip
 const SKIP_DIRS = new Set([
@@ -59,6 +62,8 @@ const LANG_MAP = {
  * Scan a project directory and extract all symbols.
  */
 export function scanProject(projectRoot, options = {}) {
+  initDynamicLanguages(); // Attempt to load tree-sitter grammars if available
+
   const maxDepth = options.maxDepth || 8;
   const maxFiles = options.maxFiles || 2000;
   const files = [];
@@ -76,6 +81,53 @@ export function scanProject(projectRoot, options = {}) {
 
   walkDir(projectRoot, projectRoot, files, symbols, 0, maxDepth, maxFiles, extraSkip);
   return { files, symbols };
+}
+
+let dynamicLangsRegistered = false;
+function initDynamicLanguages() {
+  if (dynamicLangsRegistered) return;
+  dynamicLangsRegistered = true;
+
+  const toRegister = {};
+  function findPrebuild(packageName) {
+    try {
+      const pkgPath = require.resolve(packageName + '/package.json');
+      const pkgDir = path.dirname(pkgPath);
+      const prebuildDir = path.join(pkgDir, 'prebuilds', `${process.platform}-${process.arch}`);
+      if (fs.existsSync(prebuildDir)) {
+        const files = fs.readdirSync(prebuildDir);
+        const nodeFile = files.find(f => f.endsWith('.node'));
+        if (nodeFile) return path.join(prebuildDir, nodeFile);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  const pyPath = findPrebuild('tree-sitter-python');
+  if (pyPath) {
+    toRegister['Python'] = { libraryPath: pyPath, extensions: ['py'], languageSymbol: 'tree_sitter_python' };
+    LANG_MAP['.py'].lang = 'Python';
+  }
+
+  const goPath = findPrebuild('tree-sitter-go');
+  if (goPath) {
+    toRegister['Go'] = { libraryPath: goPath, extensions: ['go'], languageSymbol: 'tree_sitter_go' };
+    LANG_MAP['.go'].lang = 'Go';
+  }
+
+  const rustPath = findPrebuild('tree-sitter-rust');
+  if (rustPath) {
+    toRegister['Rust'] = { libraryPath: rustPath, extensions: ['rs'], languageSymbol: 'tree_sitter_rust' };
+    LANG_MAP['.rs'].lang = 'Rust';
+  }
+
+  if (Object.keys(toRegister).length > 0) {
+    try {
+      registerDynamicLanguage(toRegister);
+    } catch (e) {
+      console.error("Anti-Hallucination: Failed to register dynamic AST languages", e);
+    }
+  }
 }
 
 /**
@@ -172,9 +224,16 @@ function extractWithAst(filePath, content, lang, symbols, lineOffset = 0) {
   }
 
   try {
-    extractAstSymbols(root, filePath, lang, symbols, lineOffset);
+    if (lang === Lang.JavaScript || lang === Lang.TypeScript || lang === Lang.Tsx) {
+      extractJsAstSymbols(root, filePath, lang, symbols, lineOffset);
+    } else if (lang === 'Python') {
+      extractPythonAstSymbols(root, filePath, symbols, lineOffset);
+    } else if (lang === 'Go') {
+      extractGoAstSymbols(root, filePath, symbols, lineOffset);
+    } else if (lang === 'Rust') {
+      extractRustAstSymbols(root, filePath, symbols, lineOffset);
+    }
   } catch (e) {
-    // If AST extraction fails, don't lose other files' symbols
     // AST extraction failed — continue without losing other files' data
   }
 }
@@ -193,7 +252,7 @@ function extractNamesFromNode(nameNode) {
   return nodes;
 }
 
-function extractAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
+function extractJsAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
   const isTS = (lang === Lang.TypeScript || lang === Lang.Tsx);
 
   // Extract function declarations
@@ -367,6 +426,66 @@ function extractAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
         symbols.apiRoutes[key] = { file: filePath, line: i + 1, method: 'MOUNT', path: mountPath };
       }
     }
+  }
+}
+
+function extractPythonAstSymbols(root, filePath, symbols, lineOffset = 0) {
+  const funcs = root.findAll({ rule: { kind: 'function_definition' } });
+  for (const node of funcs) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.functions, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+
+  const classes = root.findAll({ rule: { kind: 'class_definition' } });
+  for (const node of classes) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.classes, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+}
+
+function extractGoAstSymbols(root, filePath, symbols, lineOffset = 0) {
+  const funcs = root.findAll({ rule: { kind: 'function_declaration' } });
+  for (const node of funcs) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.functions, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+
+  const methods = root.findAll({ rule: { kind: 'method_declaration' } });
+  for (const node of methods) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.functions, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+
+  const types = root.findAll({ rule: { kind: 'type_spec' } });
+  for (const node of types) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.classes, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+}
+
+function extractRustAstSymbols(root, filePath, symbols, lineOffset = 0) {
+  const funcs = root.findAll({ rule: { kind: 'function_item' } });
+  for (const node of funcs) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.functions, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+
+  const structs = root.findAll({ rule: { kind: 'struct_item' } });
+  for (const node of structs) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.classes, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+
+  const enums = root.findAll({ rule: { kind: 'enum_item' } });
+  for (const node of enums) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.classes, name.text(), filePath, name.range().start.line + 1 + lineOffset);
+  }
+
+  const traits = root.findAll({ rule: { kind: 'trait_item' } });
+  for (const node of traits) {
+    const name = node.field('name');
+    if (name) addSymbol(symbols.classes, name.text(), filePath, name.range().start.line + 1 + lineOffset);
   }
 }
 

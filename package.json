@@ -46,7 +46,13 @@
     "CHANGELOG.md"
   ],
   "dependencies": {
-    "@ast-grep/napi": "^0.41.0",
+    "@ast-grep/napi": "^0.33.0",
     "@modelcontextprotocol/sdk": "^1.0.0"
-  }
+  },
+  "optionalDependencies": {
+    "tree-sitter-python": "^0.23.0",
+    "tree-sitter-go": "^0.23.0",
+    "tree-sitter-rust": "^0.23.0"
+  },
+  "devDependencies": {}
 }
