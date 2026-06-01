@@ -1,0 +1,138 @@
+/**
+ * Token Compressor Engine
+ * Orchestrates the various filtering strategies based on the executed command.
+ */
+
+import { filterGit } from './strategies/git-filter.js';
+import { filterTest } from './strategies/test-filter.js';
+import { filterLint } from './strategies/lint-filter.js';
+import { filterFile } from './strategies/file-filter.js';
+import { filterLog } from './strategies/log-filter.js';
+import { filterJson } from './strategies/json-filter.js';
+import { filterGeneric, stripAnsi } from './strategies/generic-filter.js';
+
+/**
+ * Identify the category of the command to apply the right filter.
+ */
+function detectCommandCategory(commandStr) {
+  const parts = commandStr.trim().split(/\s+/);
+  if (!parts.length) return { category: 'unknown', base: '', args: [] };
+
+  const base = parts[0].toLowerCase();
+  const args = parts.slice(1);
+  const fullArgs = args.join(' ').toLowerCase();
+
+  // Handle environment variables at the start (e.g., NODE_ENV=test npm test)
+  if (base.includes('=')) {
+    return detectCommandCategory(args.join(' '));
+  }
+
+  // Git
+  if (base === 'git' || base === 'gh' || base === 'hub') {
+    return { category: 'git', base, args };
+  }
+
+  // Tests
+  if (base === 'jest' || base === 'vitest' || base === 'pytest' || base === 'rspec' ||
+      (base === 'npm' && args[0] === 'test') ||
+      (base === 'cargo' && args[0] === 'test') ||
+      (base === 'go' && args[0] === 'test')) {
+    return { category: 'test', base, args };
+  }
+
+  // Lint / Compile
+  if (base === 'tsc' || base === 'eslint' || base === 'ruff' || base === 'biome' || base === 'rubocop' ||
+      (base === 'cargo' && args[0] === 'clippy') ||
+      (base === 'golangci-lint')) {
+    return { category: 'lint', base, args };
+  }
+
+  // Files / Directories
+  if (base === 'ls' || base === 'dir' || base === 'tree' || base === 'cat' || base === 'type' || base === 'find') {
+    return { category: 'file', base, args };
+  }
+
+  // Generic tools that might output JSON or structured data
+  if (base === 'jq' || fullArgs.includes('--json') || fullArgs.includes('-o json')) {
+    return { category: 'json', base, args };
+  }
+
+  // System/Logs
+  if (base === 'tail' || base === 'head' || base === 'journalctl' || base === 'docker' && args[0] === 'logs') {
+    return { category: 'log', base, args };
+  }
+
+  // Package managers
+  if (base === 'npm' || base === 'yarn' || base === 'pnpm' || base === 'pip' || base === 'cargo') {
+    return { category: 'package', base, args };
+  }
+
+  return { category: 'unknown', base, args };
+}
+
+/**
+ * Main compression pipeline.
+ * Routes raw output to the appropriate strategy based on the command.
+ */
+export function compressOutput(command, rawOutput, options = {}) {
+  const { maxTokens = 500, level = 'normal' } = options;
+  const { category, base, args } = detectCommandCategory(command);
+  
+  // First, always strip ANSI to make parsing easier and save tokens immediately
+  const cleanOutput = stripAnsi(rawOutput);
+
+  // If output is small enough, no complex filtering needed (just generic cleanup)
+  const estimatedTokens = Math.ceil(cleanOutput.length / 4);
+  if (estimatedTokens < 50 && category !== 'git') {
+    return filterGeneric(cleanOutput, maxTokens);
+  }
+
+  let result = null;
+
+  try {
+    switch (category) {
+      case 'git':
+        result = filterGit(cleanOutput, args);
+        break;
+      case 'test':
+        result = filterTest(cleanOutput, args);
+        break;
+      case 'lint':
+        result = filterLint(cleanOutput, args);
+        break;
+      case 'file':
+        result = filterFile(cleanOutput, args, base);
+        break;
+      case 'log':
+        result = filterLog(cleanOutput, args);
+        break;
+      case 'json':
+        result = filterJson(cleanOutput, args);
+        break;
+      // 'package' and 'unknown' fall through to generic filter
+    }
+  } catch (error) {
+    // If a specific filter crashes, fallback to generic
+    console.error(`Filter crashed for category ${category}:`, error);
+  }
+
+  // If no specific result, or filter declined, use generic
+  if (!result) {
+    result = filterGeneric(cleanOutput, maxTokens);
+  }
+
+  // Enforce max tokens even after specific filtering
+  if (Math.ceil(result.compressed.length / 4) > maxTokens) {
+    result = filterGeneric(result.compressed, maxTokens);
+  }
+
+  return {
+    category,
+    originalChars: rawOutput.length,
+    originalTokens: estimatedTokens,
+    compressedChars: result.compressed.length,
+    compressedTokens: Math.ceil(result.compressed.length / 4),
+    savingsPercent: result.savings,
+    output: result.compressed
+  };
+}
