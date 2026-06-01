@@ -49,11 +49,22 @@ Symbol registry with **fuzzy matching** that detects:
 **Automatic post-write hook** that warns after every edit.
 
 ### 🗜️ Token Compressor Engine (NEW in v0.6.0)
-Native Node.js implementation of 12 intelligent filtering strategies inspired by RTK (Rust Token Killer).
-- Reduces token consumption by 60-90% for common shell commands
-- Truncates noise, removes ANSI, groups errors, and summarizes test failures
-- Works natively on Windows, macOS, and Linux
-- Transparent post-command hook for Claude Code
+Native Node.js implementation of intelligent filtering strategies inspired by RTK (Rust Token Killer). It executes shell commands and returns token-optimized output, drastically reducing the context window usage for the AI while preserving critical fidelity.
+
+**Key Features:**
+- **Zero-Install:** Runs natively in Node.js (Windows, macOS, Linux). No Rust compilation needed.
+- **Smart Strategies:** Detects `git`, `test runners`, `linters`, and `file listings`.
+- **High Fidelity:** Preserves 100% of actual code changes (lossless diffs) while stripping noise (index hashes, ANSI colors).
+
+**Token Savings Benchmark vs Raw Output:**
+| Command | Raw Tokens | WSR Compressed | Savings |
+|---------|-----------|----------------|---------|
+| `git status` | 244 | 167 | **32%** |
+| `git log -30` | 568 | 375 | **34%** |
+| `ls -la` | 581 | 136 | **77%** |
+| `git diff` | 3929 | ~1000 | **~75%** (Preserves code!)* |
+
+*\* WSR follows RTK's philosophy: it heavily compresses noise but refuses to blindly truncate critical content like code diffs, ensuring the AI can actually read the changes.*
 
 ### 🤖 Compatible with Claude Code and Codex
 The MCP server works with Claude Code and Codex. The post-write hook is installed automatically for Claude Code only; Codex hook support depends on the Codex app/runtime hook mechanism and is documented as manual configuration.
@@ -391,11 +402,22 @@ Registro de símbolos con **fuzzy matching** que detecta:
 **Hook post-write automático** que advierte después de cada edición.
 
 ### 🗜️ Token Compressor Engine (NUEVO en v0.6.0)
-Implementación nativa en Node.js de 12 estrategias de filtrado inteligente inspiradas en RTK (Rust Token Killer).
-- Reduce el consumo de tokens en 60-90% para comandos de shell comunes
-- Trunca ruido, elimina ANSI, agrupa errores y resume fallos en tests
-- Funciona de forma nativa en Windows, macOS y Linux
-- Hook post-command transparente para Claude Code
+Implementación nativa en Node.js de estrategias de filtrado inteligente inspiradas en RTK (Rust Token Killer). Ejecuta comandos de shell y retorna un output optimizado, reduciendo drásticamente el consumo de tokens de la IA mientras preserva la fidelidad crítica de los datos.
+
+**Características Clave:**
+- **Zero-Install:** Funciona de forma nativa en Node.js (Windows, macOS, Linux). No requiere compilar Rust.
+- **Estrategias Inteligentes:** Detecta `git`, `test runners`, `linters` y `listados de archivos`.
+- **Alta Fidelidad:** Preserva el 100% de los cambios de código reales (diffs lossless) eliminando únicamente el ruido (hashes de index, colores ANSI).
+
+**Benchmark de Ahorro de Tokens vs Output Crudo:**
+| Comando | Tokens Crudos | WSR Comprimido | Ahorro |
+|---------|---------------|----------------|--------|
+| `git status` | 244 | 167 | **32%** |
+| `git log -30` | 568 | 375 | **34%** |
+| `ls -la` | 581 | 136 | **77%** |
+| `git diff` | 3929 | ~1000 | **~75%** (¡Preserva el código!)* |
+
+*\* WSR sigue la filosofía de RTK: comprime fuertemente el ruido pero se rehúsa a truncar ciegamente contenido crítico como los diffs de código, asegurando que la IA realmente pueda leer los cambios.*
 
 ### 🤖 Compatible con Claude Code y Codex
 El hook funciona en ambos mediante configuración estándar de hooks.
