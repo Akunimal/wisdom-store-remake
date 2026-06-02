@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Bumped MCP server and package version to 0.7.0.
 
+### Release Operations
+- Published GitHub release `v0.7.0`: https://github.com/Akunimal/Anti-Hallucination-MCP/releases/tag/v0.7.0
+- CI and CodeQL passed for the release commit.
+- npm publication from GitHub Actions is blocked until the repository has a valid `NPM_TOKEN` secret or trusted publishing is configured; the current publish workflow fails with `ENEEDAUTH` when `NODE_AUTH_TOKEN` is empty.
+
 ## [0.6.0] - 2026-06-01
 
 ### Added
