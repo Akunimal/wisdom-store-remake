@@ -21,11 +21,16 @@ export function stripAnsi(text) {
  * Remove progress bars, spinners, and live-update lines.
  */
 export function stripProgress(text) {
-  const lines = text.split('\n');
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
   const filtered = lines.filter(line => {
     const trimmed = line.trim();
-    // Skip progress bars (sequences of ═, ─, █, ▓, ▒, ░, ■, □, etc.)
-    if (trimmed.match(/^[═─█▓▒░■□●○◉◎⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\-|/\\#.>[\]()%\s\d]+$/)) return false;
+    // Skip progress bars (sequences of ═, ─, █, ▓, ▒, ░, ■, □, etc.).
+    // Require an actual progress marker so numeric CLI output like "24.12.0"
+    // is not mistaken for a progress line.
+    if (
+      trimmed.match(/^[═─█▓▒░■□●○◉◎⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\-|/\\#.>[\]()%\s\d]+$/) &&
+      trimmed.match(/[═─█▓▒░■□●○◉◎⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏|/\\#>[\]()%]/)
+    ) return false;
     // Skip percentage progress lines
     if (trimmed.match(/^\d+%/)) return false;
     // Skip npm/pip download progress

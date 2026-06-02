@@ -9,13 +9,13 @@
 
 **Servidor MCP minimalista + hooks para anti-alucinación en AI coding assistants.**
 
-> **Focused Core** — Only the anti-hallucination essentials. Everything else was removed due to overlap with other tools (Serena MCP, GSD Skills).
+> **Focused Core** — Four anti-hallucination tools plus two agent-safety companion tools. Redundant context management and general memory storage were removed due to overlap with other tools (Serena MCP, GSD Skills).
 >
-> **Núcleo Enfocado** — Solo lo esencial anti-alucinación. Todo lo demás fue eliminado por solapamiento con otras herramientas (Serena MCP, GSD Skills).
+> **Núcleo Enfocado** — Cuatro herramientas anti-alucinación más dos herramientas complementarias de seguridad para agentes. La gestión de contexto y la memoria general fueron eliminadas por solapamiento con otras herramientas (Serena MCP, GSD Skills).
 
 ### 🔀 About Anti-Hallucination-MCP
 
-Anti-Hallucination-MCP is a focused, high-performance server stripped down to **5 essential anti-hallucination tools**. It provides pure, uncompromising anti-hallucination capabilities without redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
+Anti-Hallucination-MCP is a focused, high-performance MCP server with **6 tools**: 4 core anti-hallucination tools and 2 companion tools for environment detection and token-efficient command output. It avoids redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale and design decisions.
 
@@ -98,7 +98,7 @@ This script will:
 
 ---
 
-## 🧰 MCP Tools (5 essential tools)
+## 🧰 MCP Tools (6 focused tools)
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
@@ -107,7 +107,7 @@ This script will:
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
 | `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) |
-| `compress_output` | **NEW**: Executes a shell command and returns token-optimized output (saves 60-90% context) | When running tests, builds, git status, or listing files |
+| `compress_output` | **NEW**: Executes a trusted local shell command and returns token-optimized output (saves 60-90% context) | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
 
 ---
 
@@ -204,9 +204,9 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 }
 ```
 
-### Codex Hook Setup
+### Experimental Codex Hook Setup
 
-`scripts/setup.js` configures the Codex MCP server, but it does not install Codex post-write hooks automatically. If your Codex runtime supports a compatible post-write hook configuration, you can wire this script manually:
+`scripts/setup.js` configures the Codex MCP server, but it does not install Codex post-write hooks automatically. Codex hook payloads can vary by app/runtime version, so Codex hook wiring is experimental and should be verified in your environment before enabling it always-on. If your Codex runtime supports a compatible post-write hook configuration, you can wire this script manually:
 
 ```json
 {
@@ -216,7 +216,7 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 }
 ```
 
-The hook reads JSON input and responds with warnings to stderr (exit code 2), but Codex hook payloads can vary by app/runtime version. Verify it in your Codex environment before enabling it always-on.
+The hook reads JSON input and responds with warnings to stderr (exit code 2).
 
 ---
 
@@ -371,7 +371,7 @@ Implementación nativa en Node.js de estrategias de filtrado inteligente inspira
 *\* WSR sigue la filosofía de RTK: comprime fuertemente el ruido pero se rehúsa a truncar ciegamente contenido crítico como los diffs de código, asegurando que la IA realmente pueda leer los cambios.*
 
 ### 🤖 Compatible con Claude Code y Codex
-El servidor MCP funciona con Claude Code y Codex. El hook de validación se configura en ambos sistemas para ejecutarse tras cada escritura.
+El servidor MCP funciona con Claude Code y Codex. El hook post-write se instala automáticamente para Claude Code; en Codex la configuración de hooks depende del runtime y se documenta como experimental/manual.
 
 ---
 
@@ -402,7 +402,7 @@ Este script:
 
 ---
 
-## 🧰 Tools MCP (5 tools esenciales)
+## 🧰 Tools MCP (6 tools enfocadas)
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
@@ -411,7 +411,7 @@ Este script:
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌ | Después de escribir código nuevo |
 | `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) |
-| `compress_output` | **NUEVO**: Ejecuta un comando shell y retorna el output optimizado (ahorra 60-90% de contexto) | Al correr tests, builds, git status, o listar archivos |
+| `compress_output` | **NUEVO**: Ejecuta un comando shell local confiable y retorna el output optimizado (ahorra 60-90% de contexto) | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
 
 ---
 
@@ -490,9 +490,9 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
 }
 ```
 
-### Setup para Codex
+### Setup experimental para Codex
 
-En tu configuración de hooks de Codex:
+`scripts/setup.js` configura el servidor MCP para Codex, pero no instala hooks post-write de Codex automáticamente. Los payloads de hooks pueden variar según la versión del runtime/app, así que verificá el comportamiento en tu entorno antes de habilitarlo siempre. Si tu runtime soporta un hook post-write compatible, podés conectarlo manualmente:
 
 ```json
 {

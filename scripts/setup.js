@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * wisdom-store-remake Setup Script
+ * Anti-Hallucination-MCP Setup Script
  * 
  * Automated onboarding for Claude Code & Codex.
  * - Detects OS and Shell
@@ -132,6 +132,50 @@ function hookEntryIncludes(entry, value) {
     return entry.includes(value);
   }
   return JSON.stringify(entry).includes(value);
+}
+
+function normalizeHookEntries(entries) {
+  if (!entries) {
+    return [];
+  }
+  return Array.isArray(entries) ? entries : [entries];
+}
+
+function makePostWriteHookEntries(command) {
+  return ['Write', 'Edit'].map((matcher) => ({
+    matcher,
+    hooks: [{
+      type: 'command',
+      command,
+      timeout: 10
+    }]
+  }));
+}
+
+function isStructuredPostWriteHookEntry(entry, command) {
+  if (!entry || typeof entry !== 'object' || !['Write', 'Edit'].includes(entry.matcher)) {
+    return false;
+  }
+
+  const hooks = Array.isArray(entry.hooks) ? entry.hooks : [];
+  return hooks.some((hook) => (
+    hook &&
+    typeof hook === 'object' &&
+    hook.type === 'command' &&
+    hook.command === command
+  ));
+}
+
+function hasStructuredPostWriteHooks(entries, command) {
+  const requiredMatchers = new Set(['Write', 'Edit']);
+
+  for (const entry of normalizeHookEntries(entries)) {
+    if (isStructuredPostWriteHookEntry(entry, command)) {
+      requiredMatchers.delete(entry.matcher);
+    }
+  }
+
+  return requiredMatchers.size === 0;
 }
 
 function readJsonConfig(filePath, label) {
@@ -505,25 +549,30 @@ if (!settings.hooks) settings.hooks = {};
 const isMcpConfigured = settings.mcpServers[mcpName]?.command === 'node' && 
                         settings.mcpServers[mcpName].args?.some(arg => arg.includes('index.js')) &&
                         (settings.mcpServers[mcpName].env?.WISDOM_STORE_DISABLED_TOOLS || '') === (mcpConfig.env.WISDOM_STORE_DISABLED_TOOLS || '');
-const isHookConfigured = settings.hooks.PostToolUse?.some(h => hookEntryIncludes(h, 'post-write-symbol-check.sh'));
+const existingPostToolUseHooks = normalizeHookEntries(settings.hooks.PostToolUse);
+const isHookConfigured = hasStructuredPostWriteHooks(existingPostToolUseHooks, postWriteHook);
+const hasLegacyHookEntries = existingPostToolUseHooks.some(
+  (entry) => hookEntryIncludes(entry, 'post-write-symbol-check.sh') &&
+    !isStructuredPostWriteHookEntry(entry, postWriteHook)
+);
 
-if (isMcpConfigured && isHookConfigured) {
+if (isMcpConfigured && isHookConfigured && !hasLegacyHookEntries) {
   logSuccess('wisdom-store already configured in settings.json!');
 } else {
   // Merge configs
   settings.mcpServers[mcpName] = mcpConfig;
   
-  // Handle PostToolUse hook (append to array or create)
-  if (!settings.hooks.PostToolUse) {
-    settings.hooks.PostToolUse = [];
-  }
-  if (!Array.isArray(settings.hooks.PostToolUse)) {
-    settings.hooks.PostToolUse = [settings.hooks.PostToolUse];
-  }
-  
-  // Avoid duplicates
-  if (!settings.hooks.PostToolUse.some(h => hookEntryIncludes(h, 'post-write-symbol-check.sh'))) {
-    settings.hooks.PostToolUse.push(postWriteHook);
+  // Handle PostToolUse hook (append structured entries and replace legacy string entries)
+  if (isHookConfigured) {
+    settings.hooks.PostToolUse = existingPostToolUseHooks.filter(
+      (entry) => !hookEntryIncludes(entry, 'post-write-symbol-check.sh') ||
+        isStructuredPostWriteHookEntry(entry, postWriteHook)
+    );
+  } else {
+    settings.hooks.PostToolUse = existingPostToolUseHooks.filter(
+      (entry) => !hookEntryIncludes(entry, 'post-write-symbol-check.sh')
+    );
+    settings.hooks.PostToolUse.push(...makePostWriteHookEntries(postWriteHook));
   }
 
   // Write back

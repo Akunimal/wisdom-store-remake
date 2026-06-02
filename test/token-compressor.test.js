@@ -67,4 +67,28 @@ drwxr-xr-x 1 user user   0 Jan 1 12:00 src
     assert.ok(result.output.includes('omitted'), 'Should include omission notice');
     assert.ok(result.savingsPercent > 50, 'Should have high savings due to truncation');
   });
+
+  it('returns full metadata for short generic output', () => {
+    const result = compressOutput('node --version', 'v24.12.0\n', { maxTokens: 100 });
+
+    assert.strictEqual(result.category, 'unknown');
+    assert.strictEqual(result.output, 'v24.12.0');
+    assert.strictEqual(typeof result.originalTokens, 'number');
+    assert.strictEqual(typeof result.compressedTokens, 'number');
+    assert.strictEqual(typeof result.savingsPercent, 'number');
+  });
+
+  it('preserves numeric version output that looks like progress noise', () => {
+    const result = compressOutput('tool --version', '24.12.0\n', { maxTokens: 100 });
+
+    assert.strictEqual(result.output, '24.12.0');
+    assert.ok(result.compressedTokens > 0, 'Version output should not be stripped');
+  });
+
+  it('preserves short CRLF output on Windows', () => {
+    const result = compressOutput('node --version', 'v24.12.0\r\n', { maxTokens: 100 });
+
+    assert.strictEqual(result.output, 'v24.12.0');
+    assert.ok(result.compressedTokens > 0, 'CRLF output should not be treated as live progress');
+  });
 });

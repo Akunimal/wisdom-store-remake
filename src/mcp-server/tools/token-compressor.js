@@ -80,11 +80,23 @@ export function compressOutput(command, rawOutput, options = {}) {
   
   // First, always strip ANSI to make parsing easier and save tokens immediately
   const cleanOutput = stripAnsi(rawOutput);
+  const estimatedTokens = Math.ceil(cleanOutput.length / 4);
+
+  function buildStats(result) {
+    return {
+      category,
+      originalChars: rawOutput.length,
+      originalTokens: estimatedTokens,
+      compressedChars: result.compressed.length,
+      compressedTokens: Math.ceil(result.compressed.length / 4),
+      savingsPercent: result.savings,
+      output: result.compressed
+    };
+  }
 
   // If output is small enough, no complex filtering needed (just generic cleanup)
-  const estimatedTokens = Math.ceil(cleanOutput.length / 4);
   if (estimatedTokens < 50 && category !== 'git') {
-    return filterGeneric(cleanOutput, maxTokens);
+    return buildStats(filterGeneric(cleanOutput, maxTokens));
   }
 
   let result = null;
@@ -125,13 +137,5 @@ export function compressOutput(command, rawOutput, options = {}) {
   // (like git diff, tests, etc.) because they are designed to preserve fidelity
   // where needed and self-truncate noise using domain knowledge (RTK philosophy).
 
-  return {
-    category,
-    originalChars: rawOutput.length,
-    originalTokens: estimatedTokens,
-    compressedChars: result.compressed.length,
-    compressedTokens: Math.ceil(result.compressed.length / 4),
-    savingsPercent: result.savings,
-    output: result.compressed
-  };
+  return buildStats(result);
 }

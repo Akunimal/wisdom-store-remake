@@ -1,4 +1,4 @@
-# Contributing to wisdom-store-remake
+# Contributing to Anti-Hallucination-MCP
 
 Thank you for your interest in contributing! This project is an anti-hallucination MCP server for AI coding assistants, and we welcome contributions that improve detection accuracy, language support, or compatibility.
 
@@ -12,7 +12,7 @@ Thank you for your interest in contributing! This project is an anti-hallucinati
 
 ### Reporting Bugs
 
-- Open an [issue](https://github.com/Akunimal/wisdom-store-remake/issues) with:
+- Open an [issue](https://github.com/Akunimal/Anti-Hallucination-MCP/issues) with:
   - Steps to reproduce
   - Expected vs actual behavior
   - Your environment (OS, Node.js version, AI assistant used)

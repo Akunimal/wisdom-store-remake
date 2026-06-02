@@ -1,8 +1,8 @@
-# 🛡️ wisdom-store-remake: Architecture & Design Decisions
+# 🛡️ Anti-Hallucination-MCP: Architecture & Design Decisions
 
 ## Resumen Ejecutivo
 
-wisdom-store fue **reducido de 24 tools a 4 tools esenciales**, eliminando ~12,000 líneas de código redundante y enfocándose exclusivamente en su funcionalidad más valiosa: **prevención de alucinaciones en AI coding assistants**.
+wisdom-store fue **reducido de 24 tools a 6 tools enfocadas**, eliminando ~12,000 líneas de código redundante. El producto actual mantiene 4 tools core de anti-alucinación y 2 tools complementarias para seguridad operativa de agentes (`detect_environment` y `compress_output`).
 
 ---
 
@@ -10,7 +10,7 @@ wisdom-store fue **reducido de 24 tools a 4 tools esenciales**, eliminando ~12,0
 
 | Métrica | Antes | Después | Cambio |
 |---------|-------|---------|--------|
-| Tools MCP | 24 | 4 | -83% |
+| Tools MCP | 24 | 6 | -75% |
 | Archivos de código | 50+ | 15 | -70% |
 | Líneas de código | ~12,500 | ~800 | -94% |
 | Librerías internas | 10 | 2 | -80% |
@@ -30,7 +30,7 @@ wisdom-store fue **reducido de 24 tools a 4 tools esenciales**, eliminando ~12,0
 - `restore_context` — Redundante
 - `compact_context` — Auto-compact nativo es mejor
 - `inspect_pruned_messages` — Debug tool, no esencial
-- `context_status` — Mantenida como readonly (diagnóstico)
+- `context_status` — Diagnóstico readonly no mantenido en la versión pública actual
 
 #### Wisdom Management (6 tools)
 - `save_wisdom` — Serena tiene `write_memory` con edición real
@@ -80,15 +80,16 @@ Todos los tests dependían de librerías eliminadas:
 
 ## ✅ Qué fue mantenido
 
-### Tools esenciales (4 + 1 opcional)
+### Tools actuales (6)
 
 | Tool | Propósito | Estado |
 |------|-----------|--------|
+| `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes | ✅ Companion |
 | `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
 | `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |
-| `context_status` | Diagnóstico readonly (opcional) | ⚠️ Opcional |
+| `compress_output` | Ejecuta comandos locales confiables y comprime output para ahorrar contexto | ⚠️ Companion con superficie de ejecución |
 
 ### Librerías mantenidas (2 archivos)
 
@@ -108,7 +109,7 @@ hooks/
 
 **El hook es compatible con:**
 - Claude Code (via `PostToolUse` hooks)
-- Codex (via `post_write` hooks)
+- Codex de forma experimental/manual si el runtime expone un payload `post_write` compatible
 
 ### Tests mantenidos (1 archivo nuevo)
 
@@ -184,7 +185,7 @@ Fueron eliminadas porque:
 ```
 wisdom-store/
 ├── src/mcp-server/
-│   ├── index.js              # Server entry (4 tools registradas)
+│   ├── index.js              # Server entry (6 tools registradas)
 │   ├── lib/
 │   │   ├── indexer.js        # ✅ AST parser + symbol check
 │   │   └── wisdom.js         # ✅ Utilidades de filesystem
@@ -215,8 +216,8 @@ wisdom-store/
 ### Instalar
 
 ```bash
-git clone https://github.com/Akunimal/wisdom-store-remake.git
-cd wisdom-store-remake
+git clone https://github.com/Akunimal/Anti-Hallucination-MCP.git
+cd Anti-Hallucination-MCP
 npm install
 ```
 
@@ -326,7 +327,7 @@ npm test
 ## 📈 Beneficios de la sanitización
 
 ### Para desarrolladores
-- ✅ **Menos ruido**: 4 tools claras vs 24 tools confusas
+- ✅ **Menos ruido**: 6 tools claras vs 24 tools confusas
 - ✅ **Más rápido**: Indexado y chequeo optimizados
 - ✅ **Más confiable**: Solo código probado y mantenido
 
@@ -414,7 +415,7 @@ El hook `post-write-symbol-check.sh` cambió:
 
 Fork maintained by [Akunimal](https://github.com/Akunimal) since December 2024.
 
-**Repository:** https://github.com/Akunimal/wisdom-store-remake
+**Repository:** https://github.com/Akunimal/Anti-Hallucination-MCP
 
 **Original upstream:** https://github.com/InfiniQuest-App/wisdom-store
 

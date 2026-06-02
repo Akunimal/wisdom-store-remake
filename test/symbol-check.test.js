@@ -104,12 +104,71 @@ test('setup cleans target repo MCP redundancies with backups', () => {
   const projectMcp = JSON.parse(fs.readFileSync(path.join(targetRepo, '.mcp.json'), 'utf8'));
   const projectCodex = fs.readFileSync(path.join(targetRepo, '.codex', 'config.toml'), 'utf8');
   const globalCodex = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
+  const globalClaude = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'settings.json'), 'utf8'));
+  const postToolUse = globalClaude.hooks.PostToolUse;
 
   assert.ok(!projectMcp.mcpServers.graphify, 'Redundant .mcp.json server should be removed');
   assert.ok(!projectCodex.includes('project-overview'), 'Redundant repo Codex server should be removed');
   assert.ok(globalCodex.includes('WISDOM_STORE_DISABLED_TOOLS = "get_project_overview"'), 'Wisdom Store should be complementary');
+  assert.ok(Array.isArray(postToolUse), 'Claude PostToolUse hooks should be an array');
+  assert.ok(postToolUse.some((entry) => entry.matcher === 'Write' && entry.hooks?.some((hook) => hook.command?.includes('post-write-symbol-check.sh'))), 'Write hook should use structured Claude hook format');
+  assert.ok(postToolUse.some((entry) => entry.matcher === 'Edit' && entry.hooks?.some((hook) => hook.command?.includes('post-write-symbol-check.sh'))), 'Edit hook should use structured Claude hook format');
   assert.ok(fs.readdirSync(targetRepo).some((name) => name.startsWith('.mcp.json.backup.')), 'Repo .mcp.json backup should exist');
   assert.ok(fs.readdirSync(path.join(targetRepo, '.codex')).some((name) => name.startsWith('config.toml.backup.')), 'Repo Codex backup should exist');
+});
+
+test('setup migrates legacy Claude hook strings to structured PostToolUse entries', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-hooks-'));
+  const targetRepo = path.join(tempRoot, 'target-repo');
+  const homeDir = path.join(tempRoot, 'home');
+  const claudeDir = path.join(homeDir, '.claude');
+  fs.mkdirSync(targetRepo, { recursive: true });
+  fs.mkdirSync(claudeDir, { recursive: true });
+
+  fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({
+    mcpServers: {
+      'wisdom-store': {
+        command: 'node',
+        args: [path.join(rootDir, 'src', 'mcp-server', 'index.js')],
+        env: {}
+      }
+    },
+    hooks: {
+      PostToolUse: ['/old/path/post-write-symbol-check.sh']
+    }
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'scripts', 'setup.js'),
+    '--project',
+    targetRepo
+  ], {
+    cwd: rootDir,
+    env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    encoding: 'utf8'
+  });
+
+  assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+
+  const settings = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'));
+  const postToolUse = settings.hooks.PostToolUse;
+
+  assert.ok(postToolUse.every((entry) => typeof entry === 'object'), 'Legacy string hook entries should be replaced');
+  assert.ok(postToolUse.some((entry) => entry.matcher === 'Write' && entry.hooks?.some((hook) => hook.type === 'command' && hook.command.includes('post-write-symbol-check.sh'))), 'Write hook should be structured');
+  assert.ok(postToolUse.some((entry) => entry.matcher === 'Edit' && entry.hooks?.some((hook) => hook.type === 'command' && hook.command.includes('post-write-symbol-check.sh'))), 'Edit hook should be structured');
+});
+
+test('OSS docs match public tool surface and security model', () => {
+  const readme = fs.readFileSync(path.join(rootDir, 'README.md'), 'utf8');
+  const architecture = fs.readFileSync(path.join(rootDir, 'ARCHITECTURE.md'), 'utf8');
+  const security = fs.readFileSync(path.join(rootDir, 'SECURITY.md'), 'utf8');
+
+  assert.ok(readme.includes('MCP Tools (6 focused tools)'), 'README should advertise the actual 6-tool surface');
+  assert.ok(readme.includes('Experimental Codex Hook Setup'), 'README should mark Codex hooks as experimental/manual');
+  assert.ok(architecture.includes('Tools actuales (6)'), 'Architecture should describe the current 6-tool surface');
+  assert.ok(!architecture.includes('| `context_status` | Diagnóstico readonly (opcional)'), 'Architecture should not list removed context_status as active');
+  assert.ok(security.includes('Command execution is explicit'), 'Security policy should document compress_output command execution');
+  assert.ok(security.includes('Anti-Hallucination-MCP'), 'Security policy should use current project branding');
 });
 
 test('symbol hook ignores imported external bindings', () => {
