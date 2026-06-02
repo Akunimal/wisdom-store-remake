@@ -102,7 +102,7 @@ This script will:
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
-| `detect_environment` | **NEW**: Detects your environment (OS, shell, package managers) and provides anti-error rules to avoid cross-platform incompatible commands | At the start of a session or when in doubt about command compatibility (especially on Windows) |
+| `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules to avoid cross-platform command failures | At the start of a session or when in doubt about command compatibility (especially on Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
@@ -406,7 +406,7 @@ Este script:
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
-| `detect_environment` | **NUEVO**: Detecta tu entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
+| `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting para evitar fallos de comandos entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌ | Después de escribir código nuevo |

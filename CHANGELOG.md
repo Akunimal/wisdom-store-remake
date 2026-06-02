@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-06-02
+
+### Added
+- Deep Windows shell diagnostics for `detect_environment`, including WSL distro parsing, Git Bash detection, plain `bash` target detection, and native Windows toolchain checks.
+- Actionable shell recommendations that explain whether to use WSL, Git Bash, or native Windows commands, with copyable `rtk` command examples.
+- Tests covering `detect_environment` MCP output and Windows-specific diagnostics.
+
+### Fixed
+- `detect_environment` now uses `spawnSync` argument arrays instead of shell-string execution for environment checks, reducing quoting-related false results.
+- Windows `.cmd` tools such as `npm.cmd` are resolved and executed correctly during native toolchain detection.
+- Standalone `node src/mcp-server/tools/detect-environment.js` execution now works on Windows paths.
+
+### Changed
+- Bumped MCP server and package version to 0.7.0.
+
 ## [0.6.0] - 2026-06-01
 
 ### Added
@@ -59,5 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed all wisdom/memory management tools (replaced by Serena MCP's `write_memory`/`read_memory`)
 - Removed all archive/condense tools (niche functionality)
 
-[0.5.0]: https://github.com/Akunimal/wisdom-store-remake/compare/v0.1.0...v0.5.0
-[0.1.0]: https://github.com/Akunimal/wisdom-store-remake/releases/tag/v0.1.0
+[0.7.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.1.0...v0.5.0
+[0.1.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/releases/tag/v0.1.0

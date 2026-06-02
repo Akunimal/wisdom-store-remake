@@ -64,7 +64,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.6.0' },
+  { name: 'wisdom-store', version: '0.7.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -72,7 +72,7 @@ const server = new Server(
 const TOOLS = [
   {
     name: 'detect_environment',
-    description: 'Detecta tu entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas. Especialmente útil en Windows para prevenir errores de PowerShell vs Bash. Ejecuta esto al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos.',
+    description: 'Detects the local command environment and returns shell-safe guidance. On Windows it distinguishes PowerShell, plain bash, WSL default distro/toolchain, Git Bash, native node/npm/git, path conventions, and quoting rules. Run at session start or before commands that may differ between PowerShell, Git Bash, and WSL.',
     inputSchema: {
       type: 'object',
       properties: {},
