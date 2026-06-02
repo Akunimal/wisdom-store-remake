@@ -3,6 +3,12 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to publish, usually a release tag such as v0.7.0'
+        required: false
+        default: ''
 
 jobs:
   build-and-publish:
@@ -13,6 +19,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -25,8 +33,46 @@ jobs:
         
       - name: Run tests
         run: npm test
+
+      - name: Check publish status
+        id: package
+        shell: bash
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          spec="${name}@${version}"
+
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "spec=${spec}" >> "$GITHUB_OUTPUT"
+
+          if npm view "$spec" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${spec} is already published; skipping npm publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Select npm auth mode
+        id: auth
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+            echo "::notice::Publishing with NPM_TOKEN."
+          else
+            echo "mode=trusted-publishing" >> "$GITHUB_OUTPUT"
+            echo "::notice::NPM_TOKEN is not set; attempting npm trusted publishing via OIDC. Configure a trusted publisher for this package on npm if this fails with ENEEDAUTH."
+          fi
         
-      - name: Publish to npm
+      - name: Publish to npm with NPM_TOKEN
+        if: steps.package.outputs.published == 'false' && steps.auth.outputs.mode == 'token'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm with trusted publishing
+        if: steps.package.outputs.published == 'false' && steps.auth.outputs.mode == 'trusted-publishing'
+        run: npm publish --provenance --access public
