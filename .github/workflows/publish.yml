@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref to publish, usually a release tag such as v0.7.0'
+        description: 'Git ref to publish, usually a release tag such as v0.7.1'
         required: false
         default: ''
 

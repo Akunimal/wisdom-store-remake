@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-06-02
+
+### Changed
+- Bumped MCP server and package version to 0.7.1 for npm publication after the 0.7.0 release version was already consumed.
+- Updated the npm publish workflow to support manual reruns with current Node/npm Trusted Publishing requirements.
+
 ## [0.7.0] - 2026-06-02
 
 ### Added
@@ -79,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed all wisdom/memory management tools (replaced by Serena MCP's `write_memory`/`read_memory`)
 - Removed all archive/condense tools (niche functionality)
 
+[0.7.1]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.1.0...v0.5.0
