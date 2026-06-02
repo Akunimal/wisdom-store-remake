@@ -15,7 +15,7 @@
 
 ### 🔀 About Anti-Hallucination-MCP
 
-Anti-Hallucination-MCP is a focused, high-performance server stripped down to **4 essential anti-hallucination tools**. It provides pure, uncompromising anti-hallucination capabilities without redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
+Anti-Hallucination-MCP is a focused, high-performance server stripped down to **5 essential anti-hallucination tools**. It provides pure, uncompromising anti-hallucination capabilities without redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale and design decisions.
 
@@ -102,7 +102,7 @@ This script will:
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
-| `detect_environment` | **NEW**: Detecta tu entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
+| `detect_environment` | **NEW**: Detects your environment (OS, shell, package managers) and provides anti-error rules to avoid cross-platform incompatible commands | At the start of a session or when in doubt about command compatibility (especially on Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
@@ -118,7 +118,7 @@ Add to your `~/.claude/settings.json` or project's `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "wisdom-store": {
+    "anti-hallucination": {
       "command": "node",
       "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
       "env": {}
@@ -134,7 +134,7 @@ Restart Claude Code or run `/mcp` to connect.
 Add to `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.wisdom-store]
+[mcp_servers.anti-hallucination]
 command = "node"
 args = ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"]
 startup_timeout_sec = 15
@@ -144,17 +144,17 @@ Restart Codex to connect.
 
 ### Compatibility Mode
 
-`scripts/setup.js` reviews MCP servers configured globally and in the current repository (`~/.claude/settings.json`, `~/.codex/config.toml`, repo `.claude/settings.json`, repo `.mcp.json`, and repo `.codex/config.toml`). When it detects overlapping repository overview/navigation tools, such as Serena or Graphify, it configures Wisdom Store to skip redundant tools:
+`scripts/setup.js` reviews MCP servers configured globally and in the current repository (`~/.claude/settings.json`, `~/.codex/config.toml`, repo `.claude/settings.json`, repo `.mcp.json`, and repo `.codex/config.toml`). When it detects overlapping repository overview/navigation tools, such as Serena or Graphify, it configures the server to skip redundant tools:
 
 ```toml
-[mcp_servers.wisdom-store]
+[mcp_servers.anti-hallucination]
 command = "node"
 args = ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"]
 env = { WISDOM_STORE_DISABLED_TOOLS = "get_project_overview" }
 startup_timeout_sec = 15
 ```
 
-You can manually disable any Wisdom Store tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
+You can manually disable any tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
 
 The setup also removes redundant repo-level MCP entries automatically when a better equivalent is already configured, while leaving global MCP configs untouched so other projects are not affected. Before changing an existing config file, it writes a timestamped `.backup.<timestamp>` copy next to that file.
 
@@ -236,7 +236,7 @@ Everything is plain text files in a `.wisdom/` directory at the project root:
 
 ### AST Extraction
 
-Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Regex fallback for Python, Go, and Rust.
+Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Dynamic Polyglot AST extraction for Python, Go, and Rust via optional dependencies, with regex fallbacks.
 
 ### Language Support
 
@@ -244,9 +244,9 @@ Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Regex f
 |----------|-------------|---------------|----------------|-------------------|
 | JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - | functions, classes, variables, exports, methods |
 | TypeScript | `.ts`, `.tsx` | ✅ Full | - | functions, classes, interfaces, types, enums, exports |
-| Python | `.py` | - | ✅ | functions, classes, methods, constants |
-| Go | `.go` | - | ✅ | functions, types, structs, interfaces, variables |
-| Rust | `.rs` | - | ✅ | functions, structs, enums, traits, constants |
+| Python | `.py` | ✅ Full (with `tree-sitter-python`) | ✅ | functions, classes, methods, constants |
+| Go | `.go` | ✅ Full (with `tree-sitter-go`) | ✅ | functions, types, structs, interfaces, methods |
+| Rust | `.rs` | ✅ Full (with `tree-sitter-rust`) | ✅ | functions, structs, enums, traits, methods |
 | Bash/Shell | `.sh`, `.bash` | - | ✅ | functions |
 | SQL | `.sql` | - | ✅ | tables, views, functions, procedures |
 | YAML | `.yaml`, `.yml` | - | ✅ | top-level keys (config variables) |
@@ -269,40 +269,6 @@ The `detect_environment` tool helps prevent cross-platform command errors by ana
 - Path format differences (`~/` vs `%USERPROFILE%`)
 - Syntax warnings (redirection, exports, sourcing)
 - Critical recommendations for Windows users
-
-**Example output on Windows with PowerShell:**
-```json
-{
-  "system": {
-    "os": "Windows",
-    "osVersion": "10.0.19045",
-    "arch": "x64",
-    "nodeVersion": "v20.11.0"
-  },
-  "shell": {
-    "current": "PowerShell",
-    "recommended": "Git Bash",
-    "available": ["PowerShell", "Git Bash"],
-    "warnings": [
-      "PowerShell usa sintaxis diferente a Bash (ej: | Out-File en vez de >)",
-      "Comandos Unix como ls, cat, grep pueden no estar disponibles",
-      "Usa Git Bash o WSL para compatibilidad con tutoriales de Linux/macOS"
-    ]
-  },
-  "rules": {
-    "commands": {
-      "ls": "Usa \"Get-ChildItem\" o \"gci\" en PowerShell, o \"ls\" en Git Bash/WSL",
-      "cat": "Usa \"Get-Content\" o \"gc\" en PowerShell, o \"cat\" en Git Bash/WSL",
-      "rm -rf": "PELIGROSO en PowerShell. Usa \"Remove-Item -Recurse -Force\" o hazlo desde Git Bash"
-    }
-  },
-  "recommendations": [
-    "⚠️ PowerShell usa sintaxis diferente a Bash...",
-    "✅ 3 package managers disponibles",
-    "✅ Entorno compatible con la mayoría de herramientas"
-  ]
-}
-```
 
 **Usage:**
 ```bash
@@ -353,25 +319,10 @@ npm test
 
 Expected output:
 ```
-✔ symbol-check detects known symbols
-✔ symbol-check reports unknown symbols
-✔ symbol-check fuzzy matches typos
-✔ symbol-check handles empty registry
-✔ symbol-check handles missing file
-
-5 passing (XXms)
+✔ Token Compressor Engine (15.35ms)
+...
+14 passing (250ms)
 ```
-
----
-
-## 📊 Before vs After
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| MCP Tools | 24 | 4 | -83% |
-| Code Files | 50+ | 15 | -70% |
-| Lines of Code | ~12,500 | ~800 | -94% |
-| Internal Libraries | 10 | 2 | -80% |
 
 ---
 
@@ -420,7 +371,7 @@ Implementación nativa en Node.js de estrategias de filtrado inteligente inspira
 *\* WSR sigue la filosofía de RTK: comprime fuertemente el ruido pero se rehúsa a truncar ciegamente contenido crítico como los diffs de código, asegurando que la IA realmente pueda leer los cambios.*
 
 ### 🤖 Compatible con Claude Code y Codex
-El hook funciona en ambos mediante configuración estándar de hooks.
+El servidor MCP funciona con Claude Code y Codex. El hook de validación se configura en ambos sistemas para ejecutarse tras cada escritura.
 
 ---
 
@@ -438,21 +389,24 @@ Ejecuta el script de setup interactivo para configurar todo automáticamente:
 
 ```bash
 node scripts/setup.js
+node scripts/setup.js --project /path/to/target-project
 ```
 
 Este script:
 1. ✅ Detecta tu SO y entorno
 2. ✅ Crea el directorio `~/.claude` si es necesario
 3. ✅ Configura `settings.json` con el servidor MCP y hooks
-4. ✅ Valida la instalación
-5. ✅ Proporciona los siguientes pasos
+4. ✅ Configura `~/.codex/config.toml` con el servidor MCP
+5. ✅ Valida la instalación
+6. ✅ Proporciona los siguientes pasos
 
 ---
 
-## 🧰 Tools MCP (4 tools esenciales)
+## 🧰 Tools MCP (5 tools esenciales)
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
+| `detect_environment` | **NUEVO**: Detecta tu entorno (OS, shell, package managers) y provee reglas anti-errores para evitar comandos incompatibles entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌ | Después de escribir código nuevo |
@@ -468,7 +422,7 @@ Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
 ```json
 {
   "mcpServers": {
-    "wisdom-store": {
+    "anti-hallucination": {
       "command": "node",
       "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
       "env": {}
@@ -478,6 +432,17 @@ Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
 ```
 
 Reinicia Claude Code o ejecuta `/mcp` para conectar.
+
+### Setup para Codex
+
+Agrega a `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.anti-hallucination]
+command = "node"
+args = ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"]
+startup_timeout_sec = 15
+```
 
 ---
 
@@ -537,8 +502,6 @@ En tu configuración de hooks de Codex:
 }
 ```
 
-El hook lee el input JSON estándar de ambos sistemas y responde con warnings en stderr (exit code 2).
-
 ---
 
 ## 📁 Estructura de almacenamiento
@@ -557,7 +520,7 @@ Todo son archivos planos en un directorio `.wisdom/` en la raíz del proyecto:
 
 ### Extracción AST
 
-Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Regex fallback para Python, Go, y Rust.
+Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Extracción Dinámica Políglota AST para Python, Go y Rust vía dependencias opcionales (con fallback a regex).
 
 ### Soporte de lenguajes
 
@@ -565,13 +528,40 @@ Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Reg
 |----------|-------------|---------------|----------------|-------------------|
 | JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | ✅ Full | - | functions, classes, variables, exports, methods |
 | TypeScript | `.ts`, `.tsx` | ✅ Full | - | functions, classes, interfaces, types, enums, exports |
-| Python | `.py` | - | ✅ | functions, classes, methods, constants |
-| Go | `.go` | - | ✅ | functions, types, structs, interfaces, variables |
-| Rust | `.rs` | - | ✅ | functions, structs, enums, traits, constants |
+| Python | `.py` | ✅ Full (con `tree-sitter-python`) | ✅ | functions, classes, methods, constants |
+| Go | `.go` | ✅ Full (con `tree-sitter-go`) | ✅ | functions, types, structs, interfaces, methods |
+| Rust | `.rs` | ✅ Full (con `tree-sitter-rust`) | ✅ | functions, structs, enums, traits, methods |
 | Bash/Shell | `.sh`, `.bash` | - | ✅ | functions |
 | SQL | `.sql` | - | ✅ | tables, views, functions, procedures |
 | YAML | `.yaml`, `.yml` | - | ✅ | top-level keys (config variables) |
 | HTML | `.html` | - | ✅ | page titles, script dependencies, inline functions |
+
+---
+
+## 🖥️ Environment Detection (NUEVO en v0.5.0)
+
+La herramienta `detect_environment` ayuda a prevenir errores de plataforma cruzada analizando tu sistema operativo y shell:
+
+**Qué detecta:**
+- **OS**: Windows, macOS, Linux (con versión)
+- **Shell**: PowerShell, cmd.exe, Git Bash, WSL, Bash, Zsh
+- **Package Managers**: npm, yarn, pnpm, bun, pip, poetry, brew, apt, etc.
+- **Alternativas disponibles**: Sugiere Git Bash o WSL en Windows para mayor compatibilidad Unix
+
+**Reglas anti-errores que provee:**
+- Comandos equivalentes (ej: `ls` → `Get-ChildItem` en PowerShell)
+- Diferencias de formato de rutas (`~/` vs `%USERPROFILE%`)
+- Advertencias de sintaxis (redirecciones, exports)
+- Recomendaciones críticas para usuarios de Windows
+
+**Uso:**
+```bash
+# Llamar vía MCP
+/detect_environment
+
+# O script standalone
+node src/mcp-server/tools/detect-environment.js
+```
 
 ---
 
@@ -611,28 +601,6 @@ Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Reg
 npm test
 ```
 
-Resultado esperado:
-```
-✔ symbol-check detecta símbolos conocidos
-✔ symbol-check reporta símbolos desconocidos
-✔ symbol-check hace fuzzy match de typos
-✔ symbol-check maneja registry vacío
-✔ symbol-check maneja archivo faltante
-
-5 passing (XXms)
-```
-
----
-
-## 📊 Antes vs Después
-
-| Métrica | Antes | Después | Cambio |
-|---------|-------|---------|--------|
-| Tools MCP | 24 | 4 | -83% |
-| Archivos de código | 50+ | 15 | -70% |
-| Líneas de código | ~12,500 | ~800 | -94% |
-| Librerías internas | 10 | 2 | -80% |
-
 ---
 
 ## 📝 Licencia
@@ -647,4 +615,3 @@ MIT
 - **Architecture / Arquitectura:** [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Examples / Ejemplos:** [examples/](examples/)
-
