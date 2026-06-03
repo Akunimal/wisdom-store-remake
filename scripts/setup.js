@@ -23,6 +23,7 @@ const PROJECT_ROOT = resolve(cliOptions.project || process.cwd());
 const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 const SETTINGS_PATH = join(homeDir, '.claude', 'settings.json');
 const CODEX_CONFIG_PATH = join(homeDir, '.codex', 'config.toml');
+const ANTIGRAVITY_CONFIG_PATH = join(homeDir, '.gemini', 'antigravity-ide', 'mcp_config.json');
 const PROJECT_SETTINGS_PATH = join(PROJECT_ROOT, '.claude', 'settings.json');
 const PROJECT_MCP_JSON_PATH = join(PROJECT_ROOT, '.mcp.json');
 const PROJECT_CODEX_CONFIG_PATH = join(PROJECT_ROOT, '.codex', 'config.toml');
@@ -254,6 +255,11 @@ const MCP_CAPABILITY_PROFILES = [
 function collectMcpServers(configs) {
   const servers = [];
 
+  if (configs.globalAntigravity) {
+    for (const [name, config] of Object.entries(configs.globalAntigravity.mcpServers || {})) {
+      servers.push({ name, source: 'Antigravity global', scope: 'global', configType: 'antigravity-json', config });
+    }
+  }
   for (const [name, config] of Object.entries(configs.globalClaude.mcpServers || {})) {
     servers.push({ name, source: 'Claude global', scope: 'global', configType: 'claude-json', config });
   }
@@ -490,12 +496,14 @@ let projectMcpJson = readJsonConfig(PROJECT_MCP_JSON_PATH, 'repo .mcp.json');
 let projectCodexConfig = existsSync(PROJECT_CODEX_CONFIG_PATH)
   ? readFileSync(PROJECT_CODEX_CONFIG_PATH, 'utf-8')
   : '';
+let globalAntigravityConfig = readJsonConfig(ANTIGRAVITY_CONFIG_PATH, 'global mcp_config.json');
 
 // Prepare MCP config
 const mcpName = 'wisdom-store';
 const mcpServerPath = join(ROOT_DIR, 'src', 'mcp-server', 'index.js');
 let configuredMcpServers = collectMcpServers({
   globalClaude: settings,
+  globalAntigravity: globalAntigravityConfig,
   projectClaude: projectClaudeSettings,
   projectMcpJson,
   globalCodex: codexConfig,
@@ -609,6 +617,41 @@ try {
   process.exit(1);
 }
 
+// 3c. Configure Antigravity MCP server
+logStep('Configuring ~/.gemini/antigravity-ide/mcp_config.json...');
+const antigravityDir = dirname(ANTIGRAVITY_CONFIG_PATH);
+if (!existsSync(antigravityDir)) {
+  mkdirSync(antigravityDir, { recursive: true });
+  logSuccess('Created ~/.gemini/antigravity-ide directory');
+}
+
+let antigravityConfig = { mcpServers: {} };
+if (existsSync(ANTIGRAVITY_CONFIG_PATH)) {
+  try {
+    antigravityConfig = JSON.parse(readFileSync(ANTIGRAVITY_CONFIG_PATH, 'utf-8'));
+    if (!antigravityConfig.mcpServers) antigravityConfig.mcpServers = {};
+  } catch (e) {
+    logWarn('Could not parse existing mcp_config.json. Proceeding with empty object.');
+  }
+}
+
+const isAntigravityConfigured = antigravityConfig.mcpServers[mcpName]?.command === 'node' &&
+                                antigravityConfig.mcpServers[mcpName].args?.some(arg => arg.includes('index.js')) &&
+                                (antigravityConfig.mcpServers[mcpName].env?.WISDOM_STORE_DISABLED_TOOLS || '') === (mcpConfig.env.WISDOM_STORE_DISABLED_TOOLS || '');
+
+if (isAntigravityConfigured) {
+  logSuccess('wisdom-store already configured in mcp_config.json!');
+} else {
+  antigravityConfig.mcpServers[mcpName] = mcpConfig;
+  try {
+    writeConfigFile(ANTIGRAVITY_CONFIG_PATH, JSON.stringify(antigravityConfig, null, 2) + '\n', '~/.gemini/antigravity-ide/mcp_config.json');
+    logSuccess('mcp_config.json updated successfully');
+  } catch (e) {
+    logError(`Failed to write mcp_config.json: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 // 4. Validate Installation
 logStep('Validating installation...');
 try {
@@ -629,11 +672,12 @@ console.log('\n' + '='.repeat(60));
 log(`${colors.bold}🎉 SETUP COMPLETE!${colors.reset}`, 'green');
 console.log('='.repeat(60));
 log('\nNext steps:', 'bold');
-log('1. Restart your terminal or Claude Code session.');
-log('2. In Claude Code or Codex, type: "Reindex this project"');
+log('1. Restart your terminal, Claude Code, or Antigravity IDE session.');
+log('2. In Claude Code, Codex, or Antigravity IDE, type: "Reindex this project"');
 log('3. Claude Code PostToolUse hook is configured; Codex hook wiring is manual/runtime-specific.');
 log('\nConfiguration file: ' + SETTINGS_PATH);
 log('Codex config file: ' + CODEX_CONFIG_PATH);
+log('Antigravity config file: ' + ANTIGRAVITY_CONFIG_PATH);
 log('MCP Server: ' + mcpName);
 log('Active Claude Hook: PostToolUse (post-write-symbol-check.sh)');
 console.log('');

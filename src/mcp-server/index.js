@@ -42,6 +42,8 @@ import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
 import { handleDetectEnvironment } from './tools/detect-environment.js';
 import { compressOutputDefinition, compressOutputHandler } from './tools/compress-output.js';
+import { hallucinationReportDefinition, handleHallucinationReport } from './tools/get-hallucination-report.js';
+import { compressionStatsDefinition, handleCompressionStats } from './tools/get-compression-stats.js';
 
 function parseDisabledTools(value) {
   if (!value) {
@@ -64,7 +66,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.7.1' },
+  { name: 'wisdom-store', version: '0.8.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -157,7 +159,9 @@ const TOOLS = [
       }
     }
   },
-  compressOutputDefinition
+  compressOutputDefinition,
+  hallucinationReportDefinition,
+  compressionStatsDefinition
 ];
 
 const disabledTools = parseDisabledTools(process.env.WISDOM_STORE_DISABLED_TOOLS);
@@ -191,6 +195,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await handleRefreshSymbols(args);
       case 'compress_output':
         return await compressOutputHandler(args);
+      case 'get_hallucination_report':
+        return await handleHallucinationReport(args);
+      case 'get_compression_stats':
+        return await handleCompressionStats(args);
       default:
         return {
           content: [{ type: 'text', text: `Unknown tool: ${name}` }],

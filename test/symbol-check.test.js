@@ -163,9 +163,9 @@ test('OSS docs match public tool surface and security model', () => {
   const architecture = fs.readFileSync(path.join(rootDir, 'ARCHITECTURE.md'), 'utf8');
   const security = fs.readFileSync(path.join(rootDir, 'SECURITY.md'), 'utf8');
 
-  assert.ok(readme.includes('MCP Tools (6 focused tools)'), 'README should advertise the actual 6-tool surface');
+  assert.ok(readme.includes('MCP Tools (8 focused tools)'), 'README should advertise the actual 8-tool surface');
   assert.ok(readme.includes('Experimental Codex Hook Setup'), 'README should mark Codex hooks as experimental/manual');
-  assert.ok(architecture.includes('Tools actuales (6)'), 'Architecture should describe the current 6-tool surface');
+  assert.ok(architecture.includes('Tools actuales (8)'), 'Architecture should describe the current 8-tool surface');
   assert.ok(!architecture.includes('| `context_status` | Diagnóstico readonly (opcional)'), 'Architecture should not list removed context_status as active');
   assert.ok(security.includes('Command execution is explicit'), 'Security policy should document compress_output command execution');
   assert.ok(security.includes('Anti-Hallucination-MCP'), 'Security policy should use current project branding');

@@ -819,7 +819,14 @@ export function generateOverview(projectRoot, scanResult) {
 }
 
 /**
- * Check symbols against registry. Returns { known, fuzzy, unknown }.
+ * Check symbols against registry. Returns { known, fuzzy, unknown, overallConfidence }.
+ *
+ * Each entry includes a `confidence` field (0.0 - 1.0):
+ * - known: 1.0 (+ established: true if usages >= 5)
+ * - fuzzy: 0.3 - 0.7 (higher for closer matches)
+ * - unknown: 0.0
+ *
+ * overallConfidence: weighted average across all checked symbols.
  */
 export function checkSymbols(symbolNames, registry) {
   const known = [];
@@ -837,7 +844,14 @@ export function checkSymbols(symbolNames, registry) {
     if (allNames.has(name)) {
       for (const [catName, cat] of Object.entries(registry)) {
         if (cat[name]) {
-          known.push({ name, category: catName, ...cat[name] });
+          const established = (cat[name].usages || 0) >= 5;
+          known.push({
+            name,
+            category: catName,
+            confidence: 1.0,
+            established,
+            ...cat[name]
+          });
           break;
         }
       }
@@ -846,10 +860,15 @@ export function checkSymbols(symbolNames, registry) {
       if (match) {
         for (const [catName, cat] of Object.entries(registry)) {
           if (cat[match.name]) {
+            // Confidence: 0.3 base + up to 0.4 based on distance quality
+            const maxDistance = Math.max(2, Math.floor(name.length * 0.3));
+            const distanceRatio = 1 - (match.distance / maxDistance);
+            const confidence = Math.round((0.3 + 0.4 * distanceRatio) * 100) / 100;
             fuzzy.push({
               queried: name,
               suggestion: match.name,
               distance: match.distance,
+              confidence,
               category: catName,
               ...cat[match.name]
             });
@@ -857,12 +876,22 @@ export function checkSymbols(symbolNames, registry) {
           }
         }
       } else {
-        unknown.push({ name });
+        unknown.push({ name, confidence: 0.0 });
       }
     }
   }
 
-  return { known, fuzzy, unknown };
+  // Compute overall confidence
+  const total = known.length + fuzzy.length + unknown.length;
+  let overallConfidence = 0;
+  if (total > 0) {
+    const sum = known.reduce((s, k) => s + k.confidence, 0)
+              + fuzzy.reduce((s, f) => s + f.confidence, 0)
+              + unknown.reduce((s, u) => s + u.confidence, 0);
+    overallConfidence = Math.round((sum / total) * 100) / 100;
+  }
+
+  return { known, fuzzy, unknown, overallConfidence };
 }
 
 function findFuzzyMatch(query, names) {

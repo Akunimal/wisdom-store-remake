@@ -2,19 +2,19 @@
 
 ## Resumen Ejecutivo
 
-wisdom-store fue **reducido de 24 tools a 6 tools enfocadas**, eliminando ~12,000 líneas de código redundante. El producto actual mantiene 4 tools core de anti-alucinación y 2 tools complementarias para seguridad operativa de agentes (`detect_environment` y `compress_output`).
+wisdom-store fue **reducido de 24 tools a 6 tools enfocadas**, y luego expandido a **8 tools** en v0.8.0 con hallucination tracking y compression analytics. El producto actual mantiene 4 tools core de anti-alucinación y 4 tools complementarias para seguridad operativa de agentes (`detect_environment`, `compress_output`, `get_hallucination_report`, `get_compression_stats`).
 
 ---
 
 ## 📊 Antes vs Después
 
-| Métrica | Antes | Después | Cambio |
-|---------|-------|---------|--------|
-| Tools MCP | 24 | 6 | -75% |
-| Archivos de código | 50+ | 15 | -70% |
-| Líneas de código | ~12,500 | ~800 | -94% |
-| Librerías internas | 10 | 2 | -80% |
-| Tests | 10 | 5 | -50% (solo los relevantes) |
+| Métrica | Antes | Después (v0.1) | Actual (v0.8) | Cambio |
+|---------|-------|---------------|---------------|--------|
+| Tools MCP | 24 | 6 | 8 | -67% |
+| Archivos de código | 50+ | 15 | 23 | -54% |
+| Líneas de código | ~12,500 | ~800 | ~2,000 | -84% |
+| Librerías internas | 10 | 2 | 4 | -60% |
+| Tests | 10 | 5 | 55 | +450% |
 
 ---
 
@@ -80,23 +80,27 @@ Todos los tests dependían de librerías eliminadas:
 
 ## ✅ Qué fue mantenido
 
-### Tools actuales (6)
+### Tools actuales (8)
 
 | Tool | Propósito | Estado |
 |------|-----------|--------|
 | `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes | ✅ Companion |
 | `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
-| `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados | ✅ CORE |
+| `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados con **confidence scoring** y **watchlist** | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |
-| `compress_output` | Ejecuta comandos locales confiables y comprime output para ahorrar contexto | ⚠️ Companion con superficie de ejecución |
+| `compress_output` | Ejecuta comandos locales confiables y comprime output. **Auto-redacta secretos** (API keys, tokens, passwords) | ⚠️ Companion con superficie de ejecución |
+| `get_hallucination_report` | Reporte de alucinaciones frecuentes, recientes y por tipo entre sesiones | ✅ Companion (v0.8.0) |
+| `get_compression_stats` | Analítica de compresión a nivel de sesión: tokens ahorrados, categorías, top ahorros | ✅ Companion (v0.8.0) |
 
-### Librerías mantenidas (2 archivos)
+### Librerías mantenidas (4 archivos)
 
 ```
 src/mcp-server/lib/
-  ✅ indexer.js   — AST parser (@ast-grep/napi) + symbol check + fuzzy matching
-  ✅ wisdom.js    — Utilidades: findProjectRoot, getWisdomDir, readSymbols, writeSymbols
+  ✅ indexer.js             — AST parser (@ast-grep/napi) + symbol check + fuzzy matching + confidence scoring
+  ✅ wisdom.js              — Utilidades: findProjectRoot, getWisdomDir, readSymbols, writeSymbols
+  ✅ hallucination-tracker.js — Persistencia cross-session de alucinaciones + watchlist (v0.8.0)
+  ✅ compression-stats.js    — Analítica in-memory de compresión por sesión (v0.8.0)
 ```
 
 ### Hooks anti-alucinación (2 archivos)
@@ -107,9 +111,9 @@ hooks/
   ✅ post-write-symbol-check.sh — Hook automático post-Write/Edit
 ```
 
-**El hook es compatible con:**
-- Claude Code (via `PostToolUse` hooks)
-- Codex de forma experimental/manual si el runtime expone un payload `post_write` compatible
+**Compatibilidad del servidor MCP y los hooks:**
+- **Servidor MCP:** Compatible de forma nativa con cualquier cliente MCP (Claude Code, Codex, Antigravity IDE, OpenCode, Cursor, Windsurf, etc.).
+- **Hook Automático:** Funciona de forma automática en Claude Code (vía `PostToolUse` hooks). En Codex de forma experimental/manual si el runtime expone un payload `post_write` compatible. Otros IDEs se benefician de las tools pero no disparan el hook automáticamente aún.
 
 ### Tests mantenidos (1 archivo nuevo)
 
@@ -185,20 +189,43 @@ Fueron eliminadas porque:
 ```
 wisdom-store/
 ├── src/mcp-server/
-│   ├── index.js              # Server entry (6 tools registradas)
+│   ├── index.js              # Server entry (8 tools registradas)
 │   ├── lib/
-│   │   ├── indexer.js        # ✅ AST parser + symbol check
-│   │   └── wisdom.js         # ✅ Utilidades de filesystem
+│   │   ├── indexer.js        # ✅ AST parser + symbol check + confidence scoring
+│   │   ├── wisdom.js         # ✅ Utilidades de filesystem
+│   │   ├── hallucination-tracker.js # ✅ Cross-session tracking (v0.8.0)
+│   │   └── compression-stats.js    # ✅ Analytics in-memory (v0.8.0)
 │   └── tools/
 │       ├── reindex-project.js    # ✅
 │       ├── get-project-overview.js # ✅
-│       ├── check-symbols.js      # ✅ CORE
-│       └── refresh-symbols.js    # ✅
+│       ├── check-symbols.js      # ✅ CORE + confidence + watchlist
+│       ├── refresh-symbols.js    # ✅
+│       ├── detect-environment.js # ✅
+│       ├── compress-output.js    # ✅ + secret redaction + fail-open
+│       ├── token-compressor.js   # ✅ + dedup + threshold + analytics
+│       ├── get-hallucination-report.js # ✅ NEW (v0.8.0)
+│       ├── get-compression-stats.js   # ✅ NEW (v0.8.0)
+│       └── strategies/
+│           ├── git-filter.js     # ✅
+│           ├── test-filter.js    # ✅
+│           ├── lint-filter.js    # ✅
+│           ├── file-filter.js    # ✅
+│           ├── log-filter.js     # ✅
+│           ├── json-filter.js    # ✅
+│           ├── generic-filter.js # ✅
+│           ├── secret-redactor.js # ✅ NEW (v0.8.0)
+│           └── dedup-filter.js   # ✅ NEW (v0.8.0)
 ├── hooks/
 │   ├── symbol-check.mjs          # ✅ Verificador standalone
-│   └── post-write-symbol-check.sh # ✅ Hook automático
+│   ├── post-write-symbol-check.sh # ✅ Hook automático
+│   └── post-command-compress.js   # ✅ Hook compresión
 ├── test/
-│   └── symbol-check.test.js      # ✅ Tests del core
+│   ├── symbol-check.test.js      # ✅ Tests del core
+│   ├── token-compressor.test.js  # ✅ Tests del compresor
+│   ├── detect-environment.test.js # ✅ Tests de entorno
+│   ├── secret-redactor.test.js   # ✅ NEW (v0.8.0)
+│   ├── dedup-filter.test.js      # ✅ NEW (v0.8.0)
+│   └── hallucination-tracker.test.js # ✅ NEW (v0.8.0)
 ├── examples/
 │   ├── CLAUDE.md                 # Documentación de uso
 │   └── mcp.json                  # Ejemplo de configuración

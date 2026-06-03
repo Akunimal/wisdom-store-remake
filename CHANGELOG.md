@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.8.0] - 2026-06-03
+
+### Added
+- **Secret Redaction Engine**: Automatically detects and redacts API keys, tokens, passwords, and credentials from `compress_output` output. Covers 15+ patterns: OpenAI, GitHub, AWS, Stripe, Slack, npm, connection strings, Bearer tokens, private keys, and generic `API_KEY=`/`password=` patterns.
+- **Hallucination Confidence Scoring**: `check_symbols` now returns a confidence score (0-100%) per symbol. Known symbols get 100%, fuzzy matches get 30-70% (proportional to edit distance), unknowns get 0%. Includes overall batch confidence with low-confidence warnings.
+- **Cross-Session Hallucination Tracking**: Symbols flagged as unknown or fuzzy are automatically recorded to `.wisdom/hallucinations.json`. Repeat offenders (3+ flags) are marked with `⚠️ [REPEAT]` warnings.
+- **`get_hallucination_report` tool**: New MCP tool that displays frequently hallucinated symbols, recent events, and type breakdown. Useful for end-of-session review or onboarding a new agent.
+- **`get_compression_stats` tool**: New MCP tool showing session-level compression analytics: total tokens saved, breakdown by category, and top individual savings.
+- **Line Deduplication Strategy**: Collapses consecutive identical lines with `[×N]` counters. Highly effective for npm install warnings, build output, and repetitive log messages.
+- **Threshold-Based Compression**: `compress_output` now returns raw output when savings are below 10%, avoiding wasteful compression. Git commands are exempt (always compress for structural value).
+- **Fail-Open Mechanism**: If the compression engine throws an internal error, `compress_output` returns the raw command output instead of failing. The command always succeeds.
+
+### Changed
+- MCP tool count increased from 6 → 8 (`get_hallucination_report`, `get_compression_stats`).
+- `compress_output` description updated to mention automatic secret redaction.
+- `compress_output` gained optional `redact` boolean parameter (default: `true`).
+- `check_symbols` output now includes confidence percentages and watchlist annotations.
+- Token Compressor pipeline order: ANSI strip → secret redaction → category filter → deduplication → threshold check → analytics recording.
+- Bumped MCP server and package version to 0.8.0.
 
 ## [0.7.1] - 2026-06-02
 
@@ -85,6 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed all wisdom/memory management tools (replaced by Serena MCP's `write_memory`/`read_memory`)
 - Removed all archive/condense tools (niche functionality)
 
+[0.8.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.5.0...v0.6.0

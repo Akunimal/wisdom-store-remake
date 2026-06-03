@@ -1,6 +1,9 @@
 /**
  * compress_output tool
  * Executes a shell command and returns token-optimized output.
+ *
+ * v0.8.0: Added secret redaction (default on), fail-open mechanism,
+ * and threshold-based compression passthrough.
  */
 
 import { exec } from 'child_process';
@@ -11,7 +14,7 @@ const execAsync = promisify(exec);
 
 export const compressOutputDefinition = {
   name: "compress_output",
-  description: "Execute a shell command and return compressed output optimized for LLM context windows. Reduces token consumption by 60-90% by applying smart filtering strategies (e.g., stripping noise, summarizing failures, grouping errors).",
+  description: "Execute a shell command and return compressed output optimized for LLM context windows. Reduces token consumption by 60-90% by applying smart filtering strategies (e.g., stripping noise, summarizing failures, grouping errors). Automatically redacts API keys, tokens, and passwords from output.",
   inputSchema: {
     type: "object",
     properties: {
@@ -29,6 +32,11 @@ export const compressOutputDefinition = {
         type: "number",
         description: "Maximum estimated tokens allowed in output before forced truncation",
         default: 500
+      },
+      redact: {
+        type: "boolean",
+        description: "Redact API keys, tokens, and passwords from output. Default: true.",
+        default: true
       }
     },
     required: ["command"]
@@ -36,7 +44,7 @@ export const compressOutputDefinition = {
 };
 
 export async function compressOutputHandler(args) {
-  const { command, level = 'normal', maxTokens = 500 } = args;
+  const { command, level = 'normal', maxTokens = 500, redact = true } = args;
 
   if (!command) {
     throw new Error('Command is required');
@@ -50,12 +58,36 @@ export async function compressOutputHandler(args) {
     // Combine stdout and stderr.
     const rawOutput = stdout + (stderr ? '\n' + stderr : '');
     
-    // Pass to compressor engine
-    const stats = compressOutput(command, rawOutput, { level, maxTokens });
+    // Pass to compressor engine — wrapped in fail-open
+    let stats;
+    try {
+      stats = compressOutput(command, rawOutput, { level, maxTokens, redact });
+    } catch (compressionError) {
+      // Fail-open: if compression itself fails, return raw output
+      console.error(`[RTK-Engine] Compression failed for "${command}":`, compressionError.message);
+      const rawTokens = Math.ceil(rawOutput.length / 4);
+      return {
+        content: [{
+          type: "text",
+          text: `[RTK-Engine] Compression bypassed (internal error): ${command}\n[Passthrough] Tokens: ${rawTokens}\n\n${rawOutput}`
+        }]
+      };
+    }
     
     // Format the response for the LLM
-    const header = `[RTK-Engine] Executed: ${command}`;
-    const statsLine = `[Savings] Tokens: ${stats.originalTokens} → ${stats.compressedTokens} (-${stats.savingsPercent}%) | Filter: ${stats.category}`;
+    let header, statsLine;
+
+    if (stats.skipped) {
+      header = `[RTK-Engine] Passthrough (savings <${stats.reason === 'below_threshold' ? '10%' : 'threshold'}): ${command}`;
+      statsLine = `[Passthrough] Tokens: ${stats.originalTokens} | Filter: ${stats.category}`;
+    } else {
+      header = `[RTK-Engine] Executed: ${command}`;
+      statsLine = `[Savings] Tokens: ${stats.originalTokens} → ${stats.compressedTokens} (-${stats.savingsPercent}%) | Filter: ${stats.category}`;
+    }
+
+    if (stats.redactedCount > 0) {
+      statsLine += ` | Redacted: ${stats.redactedCount} secret(s)`;
+    }
     
     return {
       content: [
@@ -70,10 +102,28 @@ export async function compressOutputHandler(args) {
     // We want to filter failure output too, because compilation/test errors are often huge.
     if (error.stdout || error.stderr) {
       const rawOutput = (error.stdout || '') + '\n' + (error.stderr || '');
-      const stats = compressOutput(command, rawOutput, { level, maxTokens });
+
+      // Fail-open for compression of error output too
+      let stats;
+      try {
+        stats = compressOutput(command, rawOutput, { level, maxTokens, redact });
+      } catch (compressionError) {
+        console.error(`[RTK-Engine] Compression failed for error output of "${command}":`, compressionError.message);
+        return {
+          content: [{
+            type: "text",
+            text: `[RTK-Engine] Command failed (compression bypassed): ${command}\n\n${rawOutput}`
+          }],
+          isError: true
+        };
+      }
       
       const header = `[RTK-Engine] Command failed with exit code ${error.code || 1}: ${command}`;
-      const statsLine = `[Savings] Tokens: ${Math.ceil(rawOutput.length/4)} → ${stats.compressedTokens} (-${stats.savingsPercent}%) | Filter: ${stats.category} (error mode)`;
+      let statsLine = `[Savings] Tokens: ${Math.ceil(rawOutput.length/4)} → ${stats.compressedTokens} (-${stats.savingsPercent}%) | Filter: ${stats.category} (error mode)`;
+      
+      if (stats.redactedCount > 0) {
+        statsLine += ` | Redacted: ${stats.redactedCount} secret(s)`;
+      }
       
       return {
         content: [

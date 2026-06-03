@@ -5,17 +5,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
-**Minimalist MCP server + hooks for anti-hallucination in AI coding assistants.**
+**Minimalist MCP server + hooks for anti-hallucination in AI coding assistants (Claude Code, Codex, Antigravity IDE, OpenCode, Cursor, Windsurf, etc.).**
 
-**Servidor MCP minimalista + hooks para anti-alucinación en AI coding assistants.**
+**Servidor MCP minimalista + hooks para anti-alucinación en AI coding assistants (Claude Code, Codex, Antigravity IDE, OpenCode, Cursor, Windsurf, etc.).**
 
-> **Focused Core** — Four anti-hallucination tools plus two agent-safety companion tools. Redundant context management and general memory storage were removed due to overlap with other tools (Serena MCP, GSD Skills).
+> **Focused Core** — Four core anti-hallucination tools plus four companion tools for environment detection, token-efficient output, hallucination analytics, and compression metrics. Redundant context management and general memory storage were removed due to overlap with other tools (Serena MCP, GSD Skills).
 >
-> **Núcleo Enfocado** — Cuatro herramientas anti-alucinación más dos herramientas complementarias de seguridad para agentes. La gestión de contexto y la memoria general fueron eliminadas por solapamiento con otras herramientas (Serena MCP, GSD Skills).
+> **Núcleo Enfocado** — Cuatro herramientas core anti-alucinación más cuatro herramientas complementarias para detección de entorno, output eficiente en tokens, analítica de alucinaciones y métricas de compresión. La gestión de contexto y la memoria general fueron eliminadas por solapamiento con otras herramientas (Serena MCP, GSD Skills).
 
 ### 🔀 About Anti-Hallucination-MCP
 
-Anti-Hallucination-MCP is a focused, high-performance MCP server with **6 tools**: 4 core anti-hallucination tools and 2 companion tools for environment detection and token-efficient command output. It avoids redundant features like context management or general wisdom storage that overlap with Claude Code’s native auto-compact, Serena MCP’s memory system, or GSD Skills’ planning capabilities.
+Anti-Hallucination-MCP is a focused, high-performance MCP server with **8 tools**: 4 core anti-hallucination tools and 4 companion tools for environment detection, token-efficient command output with secret redaction, cross-session hallucination tracking, and compression analytics. It avoids redundant features like context management or general wisdom storage that overlap with Claude Code's native auto-compact, Serena MCP's memory system, or GSD Skills' planning capabilities.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full rationale and design decisions.
 
@@ -39,22 +39,27 @@ AST-based symbol extraction (via `@ast-grep/napi`):
 - HTML page inventory
 
 ### 🔍 Anti-Hallucination
-Symbol registry with **fuzzy matching** that detects:
-- Hallucinated function names
-- Typos in imports and calls
+Symbol registry with **fuzzy matching** and **confidence scoring** that detects:
+- Hallucinated function names (with 0-100% confidence per symbol)
+- Typos in imports and calls (fuzzy match with suggestion)
 - Unknown or non-existent symbols
 - Import paths to files that don't exist
 - Invalid API routes
+- **Repeat offenders** — symbols hallucinated across multiple sessions are flagged with `⚠️ [REPEAT]`
 
 **Automatic post-write hook** that warns after every edit.
 
-### 🗜️ Token Compressor Engine (NEW in v0.6.0)
+### 🗜️ Token Compressor Engine
 Native Node.js implementation of intelligent filtering strategies inspired by RTK (Rust Token Killer). It executes shell commands and returns token-optimized output, drastically reducing the context window usage for the AI while preserving critical fidelity.
 
 **Key Features:**
 - **Zero-Install:** Runs natively in Node.js (Windows, macOS, Linux). No Rust compilation needed.
 - **Smart Strategies:** Detects `git`, `test runners`, `linters`, and `file listings`.
 - **High Fidelity:** Preserves 100% of actual code changes (lossless diffs) while stripping noise (index hashes, ANSI colors).
+- **🔒 Secret Redaction (v0.8.0):** Automatically detects and redacts API keys, tokens, passwords, and credentials before output reaches the LLM. Covers 15+ patterns (OpenAI, GitHub, AWS, Stripe, Slack, npm, connection strings, Bearer tokens, private keys).
+- **📊 Line Deduplication (v0.8.0):** Collapses consecutive identical lines with `[×N]` counters. Highly effective for npm install warnings and build output.
+- **⚡ Threshold Compression (v0.8.0):** Skips compression when savings are below 10% to avoid overhead. Returns raw cleaned output instead.
+- **🛡️ Fail-Open (v0.8.0):** If the compressor crashes internally, the raw command output is returned instead of an error.
 
 **Token Savings Benchmark vs Raw Output:**
 | Command | Raw Tokens | WSR Compressed | Savings |
@@ -66,8 +71,11 @@ Native Node.js implementation of intelligent filtering strategies inspired by RT
 
 *\* WSR follows RTK's philosophy: it heavily compresses noise but refuses to blindly truncate critical content like code diffs, ensuring the AI can actually read the changes.*
 
-### 🤖 Compatible with Claude Code and Codex
-The MCP server works with Claude Code and Codex. The post-write hook is installed automatically for Claude Code only; Codex hook support depends on the Codex app/runtime hook mechanism and is documented as manual configuration.
+### 🤖 Universally Compatible with MCP Clients
+The MCP server works natively with **any AI IDE or client that supports the Model Context Protocol** (OpenCode, Cursor, Windsurf, Cline, RooCode, Zed, etc.).
+- **Automated setup** is provided for Claude Code, Codex, and Antigravity IDE.
+- **Manual configuration** works for all other MCP clients by pointing them to the `src/mcp-server/index.js` file.
+- *Note:* The automatic post-write hook is installed automatically for Claude Code only. Other IDEs will still benefit from all MCP tools, but you will need to call `check_symbols` manually or configure their specific hook systems if supported.
 
 ---
 
@@ -93,21 +101,24 @@ This script will:
 2. ✅ Create `~/.claude` directory if needed
 3. ✅ Configure `~/.claude/settings.json` with MCP server and Claude Code hooks
 4. ✅ Configure `~/.codex/config.toml` with the MCP server
-5. ✅ Validate installation
-6. ✅ Provide next steps
+5. ✅ Configure `~/.gemini/antigravity-ide/mcp_config.json` with the MCP server
+6. ✅ Validate installation
+7. ✅ Provide next steps
 
 ---
 
-## 🧰 MCP Tools (6 focused tools)
+## 🧰 MCP Tools (8 focused tools)
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
 | `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules to avoid cross-platform command failures | At the start of a session or when in doubt about command compatibility (especially on Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
-| `check_symbols` | Cross-references symbols against registry. Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌ | After writing new code |
+| `check_symbols` | Cross-references symbols against registry with **confidence scoring** (0-100%). Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌. Flags repeat offenders across sessions | After writing new code |
 | `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) |
-| `compress_output` | **NEW**: Executes a trusted local shell command and returns token-optimized output (saves 60-90% context) | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
+| `compress_output` | Executes a shell command and returns token-optimized output (saves 60-90% context). **Auto-redacts** API keys, tokens, and passwords | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
+| `get_hallucination_report` | **NEW (v0.8.0)**: Shows frequently hallucinated symbols, recent events, and breakdown by type across sessions | End-of-session review, onboarding a new agent, or analyzing recurring hallucination patterns |
+| `get_compression_stats` | **NEW (v0.8.0)**: Session-level compression analytics — total tokens saved, breakdown by category, top individual wins | Understanding the value of `compress_output`, optimizing token usage |
 
 ---
 
@@ -128,6 +139,30 @@ Add to your `~/.claude/settings.json` or project's `.mcp.json`:
 ```
 
 Restart Claude Code or run `/mcp` to connect.
+
+### Antigravity IDE MCP Configuration
+
+Add to `~/.gemini/antigravity-ide/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "wisdom-store": {
+      "command": "node",
+      "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
+      "env": {}
+    }
+  }
+}
+```
+
+Restart Antigravity IDE to connect.
+
+### Other IDEs (OpenCode, Cursor, Windsurf, etc.)
+
+For any other MCP-compatible IDE, add a Node.js MCP server using the following parameters:
+- **Type/Command:** `node`
+- **Arguments:** `/absolute/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js`
 
 ### Codex MCP Configuration
 
@@ -291,12 +326,16 @@ node src/mcp-server/tools/detect-environment.js
    └─> Write code...
 
 3. check_symbols (automatic via post-write hook)
-   ├─> ✅ Confirmed symbols → continue
-   ├─> ⚠️ Fuzzy match → possible typo, review
-   └─> ❌ Unknowns → check if hallucination or new symbol
+   ├─> ✅ Confirmed (100% confidence) → continue
+   ├─> ⚠️ Fuzzy match (30-70% confidence) → possible typo, review
+   ├─> ❌ Unknown (0% confidence) → check if hallucination or new symbol
+   └─> ⚠️ [REPEAT] → symbol has been flagged before (cross-session tracking)
 
 4. If there are legitimate unknowns (new symbols)
    └─> refresh_symbols → update registry
+
+5. End of session (optional)
+   └─> get_hallucination_report → review patterns
 ```
 
 **The post-write hook does step 3 automatically** after each Write/Edit.
@@ -306,7 +345,7 @@ node src/mcp-server/tools/detect-environment.js
 ## 📦 Requirements
 
 - Node.js 18+
-- Claude Code or Codex (for hooks)
+- Any MCP-compatible client (Claude Code, Codex, Antigravity IDE, OpenCode, Cursor, Windsurf, etc.)
 - Git (optional, for versioning `.wisdom/` directory)
 
 ---
@@ -319,9 +358,12 @@ npm test
 
 Expected output:
 ```
-✔ Token Compressor Engine (15.35ms)
+✔ Secret Redaction Engine
+✔ Line Deduplication
+✔ Hallucination Tracker
+✔ Token Compressor Engine
 ...
-14 passing (250ms)
+55 passing (17s)
 ```
 
 ---
@@ -343,22 +385,27 @@ Extracción de símbolos basada en AST (vía `@ast-grep/napi`):
 - Inventario de páginas HTML
 
 ### 🔍 Anti-alucinación
-Registro de símbolos con **fuzzy matching** que detecta:
-- Nombres de funciones hallucinados
-- Typos en imports y llamadas
+Registro de símbolos con **fuzzy matching** y **scoring de confianza** que detecta:
+- Nombres de funciones hallucinados (con 0-100% de confianza por símbolo)
+- Typos en imports y llamadas (fuzzy match con sugerencia)
 - Símbolos desconocidos o inexistentes
 - Import paths a archivos que no existen
 - Rutas API inválidas
+- **Reincidentes** — símbolos alucinados en múltiples sesiones se marcan con `⚠️ [REPEAT]`
 
 **Hook post-write automático** que advierte después de cada edición.
 
-### 🗜️ Token Compressor Engine (NUEVO en v0.6.0)
+### 🗜️ Token Compressor Engine
 Implementación nativa en Node.js de estrategias de filtrado inteligente inspiradas en RTK (Rust Token Killer). Ejecuta comandos de shell y retorna un output optimizado, reduciendo drásticamente el consumo de tokens de la IA mientras preserva la fidelidad crítica de los datos.
 
 **Características Clave:**
 - **Zero-Install:** Funciona de forma nativa en Node.js (Windows, macOS, Linux). No requiere compilar Rust.
 - **Estrategias Inteligentes:** Detecta `git`, `test runners`, `linters` y `listados de archivos`.
 - **Alta Fidelidad:** Preserva el 100% de los cambios de código reales (diffs lossless) eliminando únicamente el ruido (hashes de index, colores ANSI).
+- **🔒 Redacción de Secretos (v0.8.0):** Detecta y redacta automáticamente API keys, tokens, contraseñas y credenciales antes de que el output llegue al LLM. Cubre 15+ patrones (OpenAI, GitHub, AWS, Stripe, Slack, npm, connection strings, Bearer tokens, claves privadas).
+- **📊 Deduplicación de Líneas (v0.8.0):** Colapsa líneas consecutivas idénticas con contadores `[×N]`. Altamente efectivo para warnings de npm install y output de builds.
+- **⚡ Compresión con Umbral (v0.8.0):** Omite la compresión cuando el ahorro es menor al 10% para evitar overhead innecesario.
+- **🛡️ Fail-Open (v0.8.0):** Si el compresor falla internamente, retorna el output crudo del comando en lugar de un error.
 
 **Benchmark de Ahorro de Tokens vs Output Crudo:**
 | Comando | Tokens Crudos | WSR Comprimido | Ahorro |
@@ -370,8 +417,11 @@ Implementación nativa en Node.js de estrategias de filtrado inteligente inspira
 
 *\* WSR sigue la filosofía de RTK: comprime fuertemente el ruido pero se rehúsa a truncar ciegamente contenido crítico como los diffs de código, asegurando que la IA realmente pueda leer los cambios.*
 
-### 🤖 Compatible con Claude Code y Codex
-El servidor MCP funciona con Claude Code y Codex. El hook post-write se instala automáticamente para Claude Code; en Codex la configuración de hooks depende del runtime y se documenta como experimental/manual.
+### 🤖 Universalmente Compatible con Clientes MCP
+El servidor MCP funciona de forma nativa con **cualquier AI IDE o cliente que soporte el Model Context Protocol** (OpenCode, Cursor, Windsurf, Cline, RooCode, Zed, etc.).
+- **Configuración automática** provista para Claude Code, Codex y Antigravity IDE.
+- **Configuración manual** funciona para todos los demás clientes apuntándolos al archivo `src/mcp-server/index.js`.
+- *Nota:* El hook automático post-write se instala solo para Claude Code. Los demás IDEs se beneficiarán de todas las herramientas MCP, pero deberás llamar a `check_symbols` manualmente o configurar sus propios sistemas de hooks si los soportan.
 
 ---
 
@@ -397,21 +447,24 @@ Este script:
 2. ✅ Crea el directorio `~/.claude` si es necesario
 3. ✅ Configura `settings.json` con el servidor MCP y hooks
 4. ✅ Configura `~/.codex/config.toml` con el servidor MCP
-5. ✅ Valida la instalación
-6. ✅ Proporciona los siguientes pasos
+5. ✅ Configura `~/.gemini/antigravity-ide/mcp_config.json` con el servidor MCP
+6. ✅ Valida la instalación
+7. ✅ Proporciona los siguientes pasos
 
 ---
 
-## 🧰 Tools MCP (6 tools enfocadas)
+## 🧰 Tools MCP (8 tools enfocadas)
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
 | `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting para evitar fallos de comandos entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
-| `check_symbols` | Cruza símbolos contra el registro. Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌ | Después de escribir código nuevo |
+| `check_symbols` | Cruza símbolos contra el registro con **scoring de confianza** (0-100%). Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌. Marca reincidentes entre sesiones | Después de escribir código nuevo |
 | `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) |
-| `compress_output` | **NUEVO**: Ejecuta un comando shell local confiable y retorna el output optimizado (ahorra 60-90% de contexto) | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
+| `compress_output` | Ejecuta un comando shell local confiable y retorna el output optimizado (ahorra 60-90% de contexto). **Auto-redacta** API keys, tokens y contraseñas | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
+| `get_hallucination_report` | **NUEVO (v0.8.0)**: Muestra símbolos frecuentemente alucinados, eventos recientes y desglose por tipo entre sesiones | Revisión de fin de sesión, onboarding de un nuevo agente, o análisis de patrones de alucinación recurrentes |
+| `get_compression_stats` | **NUEVO (v0.8.0)**: Analítica de compresión a nivel de sesión — total de tokens ahorrados, desglose por categoría, mejores ahorros individuales | Entender el valor de `compress_output`, optimizar uso de tokens |
 
 ---
 
@@ -432,6 +485,30 @@ Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
 ```
 
 Reinicia Claude Code o ejecuta `/mcp` para conectar.
+
+### Setup para Antigravity IDE
+
+Agrega a `~/.gemini/antigravity-ide/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "wisdom-store": {
+      "command": "node",
+      "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
+      "env": {}
+    }
+  }
+}
+```
+
+Reinicia Antigravity IDE para conectar.
+
+### Otros IDEs (OpenCode, Cursor, Windsurf, etc.)
+
+Para cualquier otro IDE compatible con MCP, agrega un servidor MCP de Node.js usando estos parámetros:
+- **Tipo/Comando:** `node`
+- **Argumentos:** `/ruta/absoluta/a/Anti-Hallucination-MCP/src/mcp-server/index.js`
 
 ### Setup para Codex
 
@@ -575,12 +652,16 @@ node src/mcp-server/tools/detect-environment.js
    └─> Escribir código...
 
 3. check_symbols (automático via hook post-write)
-   ├─> ✅ Símbolos confirmados → continuar
-   ├─> ⚠️ Fuzzy match → posible typo, revisar
-   └─> ❌ Unknowns → verificar si es hallucination o símbolo nuevo
+   ├─> ✅ Confirmados (100% confianza) → continuar
+   ├─> ⚠️ Fuzzy match (30-70% confianza) → posible typo, revisar
+   ├─> ❌ Unknowns (0% confianza) → verificar si es hallucination o símbolo nuevo
+   └─> ⚠️ [REPEAT] → el símbolo fue marcado antes (tracking entre sesiones)
 
 4. Si hay unknowns legítimos (símbolos nuevos)
    └─> refresh_symbols → actualizar el registro
+
+5. Fin de sesión (opcional)
+   └─> get_hallucination_report → revisar patrones
 ```
 
 **El hook post-write hace el paso 3 automáticamente** después de cada Write/Edit.
@@ -590,7 +671,7 @@ node src/mcp-server/tools/detect-environment.js
 ## 📦 Requisitos
 
 - Node.js 18+
-- Claude Code o Codex (para hooks)
+- Cualquier cliente compatible con MCP (Claude Code, Codex, Antigravity IDE, OpenCode, Cursor, Windsurf, etc.)
 - Git (opcional, para versionado del directorio `.wisdom/`)
 
 ---
