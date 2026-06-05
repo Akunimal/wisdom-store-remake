@@ -18,7 +18,7 @@ import {
   writeSymbols
 } from '../lib/indexer.js';
 
-export async function handleGetProjectOverview(args) {
+export async function handleGetProjectOverview(args = {}) {
   const projectRoot = findProjectRoot(args.project_path);
   const wisdomDir = getWisdomDir(projectRoot, true);
 
@@ -48,7 +48,10 @@ export async function handleGetProjectOverview(args) {
   index.lastIndexed = new Date().toISOString();
   writeIndex(wisdomDir, index);
 
-  const overview = generateOverview(projectRoot, scanResult);
+  const overview = generateOverview(projectRoot, scanResult, {
+    maxFiles: args.maxFiles || 100,
+    detail: args.detail || 'summary'
+  });
   const footer = `\n---\n*Fresh scan: ${scanResult.files.length} files in ${elapsed}ms.*`;
 
   return {

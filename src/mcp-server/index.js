@@ -66,7 +66,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.8.0' },
+  { name: 'wisdom-store', version: '0.8.1' },
   { capabilities: { tools: {} } }
 );
 
@@ -77,7 +77,13 @@ const TOOLS = [
     description: 'Detects the local command environment and returns shell-safe guidance. On Windows it distinguishes PowerShell, plain bash, WSL default distro/toolchain, Git Bash, native node/npm/git, path conventions, and quoting rules. Run at session start or before commands that may differ between PowerShell, Git Bash, and WSL.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        compact: {
+          type: 'boolean',
+          description: 'Defaults to false (full JSON diagnostic). Set to true to get a compact text summary (~250 tokens) if you only need the key rules and recommendations.',
+          default: false
+        }
+      },
       required: []
     }
   },
@@ -104,15 +110,27 @@ const TOOLS = [
   },
   {
     name: 'get_project_overview',
-    description: 'Get a compact map of the project showing file structure and key symbols. Runs a fresh scan for accuracy. Useful for orienting yourself in an unfamiliar codebase or getting a high-level view before diving into specifics.',
+    description: 'Returns a compact map of the project (file tree, API routes, HTML pages). Pass maxFiles to control truncation. detail="full" includes a list of classes and exports, but can consume many tokens. Run this early when exploring a new repository.',
     inputSchema: {
       type: 'object',
       properties: {
         project_path: {
           type: 'string',
-          description: 'Project root directory. If omitted, auto-detects from current working directory.'
+          description: 'Optional path to scan. Defaults to current directory.'
+        },
+        maxFiles: {
+          type: 'integer',
+          description: 'Maximum number of files to show in the directory tree before truncating (default: 100).',
+          default: 100
+        },
+        detail: {
+          type: 'string',
+          description: 'Level of detail: "summary" (default, omits class/export lists) or "full".',
+          enum: ['summary', 'full'],
+          default: 'summary'
         }
-      }
+      },
+      required: []
     }
   },
   {

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.8.1] - 2026-06-05
+
+### Added
+- **Similar Line Grouping**: `groupSimilarLines` strategy now active in the Token Compressor pipeline (Step 4, post-dedup). Collapses consecutive lines sharing a common prefix (e.g., `npm warn deprecated module-a`, `module-b`, `module-c`) into a single grouped line. Saves 200-500 additional tokens per command with repetitive output. The function existed in `dedup-filter.js` since v0.8.0 but was never wired into the pipeline.
+- **Universal IDE Support**: Documented shell aliases (`~/.bashrc`, `$PROFILE`) to route noisy commands through `post-command-compress.js` in any IDE terminal (Cursor, Windsurf, Cline), granting automatic compression without needing native IDE hooks.
+
+### Changed
+- **Compact Environment Detection**: `detect_environment` compact mode is now an opt-in parameter (`compact: true`) instead of the default. The default (`false`) returns the full JSON diagnostic for maximum context, letting the agent choose when to save tokens (~250 tokens vs ~1,500).
+- **Project Overview Compression**: `get_project_overview` now supports `maxFiles` (default 100, truncates long directory trees) and `detail` (default 'summary', omits massive class/export lists). Drops token usage on large projects by thousands of tokens.
+- `compress_output` description updated to be more directive: starts with "PREFER this over native shell execution for: git, npm, cargo, pip, make, tsc, eslint" to steer agents toward using compressed output over raw command execution.
+- Token Compressor pipeline order updated: ANSI strip → secret redaction → category filter → deduplication → **similar line grouping** → threshold check → analytics recording.
+- `detect_environment` test updated: now validates both compact and verbose (`compact: false`) modes with the new default.
+- Bumped MCP server and package version to 0.8.1.
+
 ## [0.8.0] - 2026-06-03
 
 ### Added
@@ -104,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed all wisdom/memory management tools (replaced by Serena MCP's `write_memory`/`read_memory`)
 - Removed all archive/condense tools (niche functionality)
 
+[0.8.1]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Akunimal/Anti-Hallucination-MCP/compare/v0.6.0...v0.7.0

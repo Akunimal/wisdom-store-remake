@@ -58,6 +58,7 @@ Native Node.js implementation of intelligent filtering strategies inspired by RT
 - **High Fidelity:** Preserves 100% of actual code changes (lossless diffs) while stripping noise (index hashes, ANSI colors).
 - **🔒 Secret Redaction (v0.8.0):** Automatically detects and redacts API keys, tokens, passwords, and credentials before output reaches the LLM. Covers 15+ patterns (OpenAI, GitHub, AWS, Stripe, Slack, npm, connection strings, Bearer tokens, private keys).
 - **📊 Line Deduplication (v0.8.0):** Collapses consecutive identical lines with `[×N]` counters. Highly effective for npm install warnings and build output.
+- **🔗 Similar Line Grouping (v0.8.1):** Collapses consecutive lines sharing a common prefix (e.g., `npm warn deprecated module-a`, `module-b`, `module-c`) into a single grouped summary. Saves 200-500 additional tokens on repetitive output.
 - **⚡ Threshold Compression (v0.8.0):** Skips compression when savings are below 10% to avoid overhead. Returns raw cleaned output instead.
 - **🛡️ Fail-Open (v0.8.0):** If the compressor crashes internally, the raw command output is returned instead of an error.
 
@@ -75,7 +76,18 @@ Native Node.js implementation of intelligent filtering strategies inspired by RT
 The MCP server works natively with **any AI IDE or client that supports the Model Context Protocol** (OpenCode, Cursor, Windsurf, Cline, RooCode, Zed, etc.).
 - **Automated setup** is provided for Claude Code, Codex, and Antigravity IDE.
 - **Manual configuration** works for all other MCP clients by pointing them to the `src/mcp-server/index.js` file.
-- *Note:* The automatic post-write hook is installed automatically for Claude Code only. Other IDEs will still benefit from all MCP tools, but you will need to call `check_symbols` manually or configure their specific hook systems if supported.
+
+### 🌐 Universal IDE Support (Shell Aliases)
+To get automatic output compression for verbose commands (like `npm install` or `cargo build`) in **any IDE terminal** (Cursor, Windsurf, Cline, etc.), you can set up shell aliases. This guarantees that your LLM only sees the token-optimized output, saving context window space.
+
+Add these aliases to your `~/.bashrc`, `~/.zshrc`, or `$PROFILE` (PowerShell):
+```bash
+# Example for ~/.bashrc or ~/.zshrc
+alias npm="node /path/to/Anti-Hallucination-MCP/hooks/post-command-compress.js npm"
+alias tsc="node /path/to/Anti-Hallucination-MCP/hooks/post-command-compress.js tsc"
+alias cargo="node /path/to/Anti-Hallucination-MCP/hooks/post-command-compress.js cargo"
+```
+*(Claude Code users: the setup script already installs a native `PostToolUse` hook, so aliases are not required).*
 
 ---
 
@@ -111,12 +123,12 @@ This script will:
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
-| `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules to avoid cross-platform command failures | At the start of a session or when in doubt about command compatibility (especially on Windows) |
+| `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules. Returns compact text (~250 tokens) by default; pass `compact: false` for full JSON diagnostic | At the start of a session or when in doubt about command compatibility (especially on Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry with **confidence scoring** (0-100%). Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌. Flags repeat offenders across sessions | After writing new code |
 | `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) |
-| `compress_output` | Executes a shell command and returns token-optimized output (saves 60-90% context). **Auto-redacts** API keys, tokens, and passwords | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
+| `compress_output` | **Prefer over native shell execution** for git, npm, cargo, pip, make, tsc, eslint. Returns token-optimized output (saves 60-90% context). **Auto-redacts** secrets. Groups similar lines | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
 | `get_hallucination_report` | **NEW (v0.8.0)**: Shows frequently hallucinated symbols, recent events, and breakdown by type across sessions | End-of-session review, onboarding a new agent, or analyzing recurring hallucination patterns |
 | `get_compression_stats` | **NEW (v0.8.0)**: Session-level compression analytics — total tokens saved, breakdown by category, top individual wins | Understanding the value of `compress_output`, optimizing token usage |
 
@@ -289,7 +301,7 @@ Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Dynamic
 
 ---
 
-## 🖥️ Environment Detection (NEW in v0.5.0)
+## 🖥️ Environment Detection
 
 The `detect_environment` tool helps prevent cross-platform command errors by analyzing your system:
 
@@ -305,10 +317,15 @@ The `detect_environment` tool helps prevent cross-platform command errors by ana
 - Syntax warnings (redirection, exports, sourcing)
 - Critical recommendations for Windows users
 
+**Compact mode (v0.8.1):** By default, returns a concise text summary (~250 tokens) with only the recommendation, key rules, and warnings. Pass `compact: false` to get the full JSON diagnostic (~1,500 tokens) for debugging.
+
 **Usage:**
 ```bash
-# Call via MCP
+# Call via MCP (compact by default)
 /detect_environment
+
+# Full JSON diagnostic
+/detect_environment {"compact": false}
 
 # Or standalone
 node src/mcp-server/tools/detect-environment.js
@@ -404,6 +421,7 @@ Implementación nativa en Node.js de estrategias de filtrado inteligente inspira
 - **Alta Fidelidad:** Preserva el 100% de los cambios de código reales (diffs lossless) eliminando únicamente el ruido (hashes de index, colores ANSI).
 - **🔒 Redacción de Secretos (v0.8.0):** Detecta y redacta automáticamente API keys, tokens, contraseñas y credenciales antes de que el output llegue al LLM. Cubre 15+ patrones (OpenAI, GitHub, AWS, Stripe, Slack, npm, connection strings, Bearer tokens, claves privadas).
 - **📊 Deduplicación de Líneas (v0.8.0):** Colapsa líneas consecutivas idénticas con contadores `[×N]`. Altamente efectivo para warnings de npm install y output de builds.
+- **🔗 Agrupación de Líneas Similares (v0.8.1):** Colapsa líneas consecutivas que comparten un prefijo común (ej: `npm warn deprecated module-a`, `module-b`, `module-c`) en un único resumen agrupado. Ahorra 200-500 tokens adicionales en output repetitivo.
 - **⚡ Compresión con Umbral (v0.8.0):** Omite la compresión cuando el ahorro es menor al 10% para evitar overhead innecesario.
 - **🛡️ Fail-Open (v0.8.0):** Si el compresor falla internamente, retorna el output crudo del comando en lugar de un error.
 
@@ -421,7 +439,18 @@ Implementación nativa en Node.js de estrategias de filtrado inteligente inspira
 El servidor MCP funciona de forma nativa con **cualquier AI IDE o cliente que soporte el Model Context Protocol** (OpenCode, Cursor, Windsurf, Cline, RooCode, Zed, etc.).
 - **Configuración automática** provista para Claude Code, Codex y Antigravity IDE.
 - **Configuración manual** funciona para todos los demás clientes apuntándolos al archivo `src/mcp-server/index.js`.
-- *Nota:* El hook automático post-write se instala solo para Claude Code. Los demás IDEs se beneficiarán de todas las herramientas MCP, pero deberás llamar a `check_symbols` manualmente o configurar sus propios sistemas de hooks si los soportan.
+
+### 🌐 Soporte Universal para IDEs (Shell Aliases)
+Para obtener compresión automática de comandos ruidosos (como `npm install` o `cargo build`) en **cualquier terminal de IDE** (Cursor, Windsurf, Cline, etc.), podés configurar shell aliases. Esto garantiza que tu LLM solo vea el output optimizado, ahorrando espacio en la ventana de contexto.
+
+Agregá estos alias a tu `~/.bashrc`, `~/.zshrc`, o `$PROFILE` (PowerShell):
+```bash
+# Ejemplo para ~/.bashrc o ~/.zshrc
+alias npm="node /ruta/a/Anti-Hallucination-MCP/hooks/post-command-compress.js npm"
+alias tsc="node /ruta/a/Anti-Hallucination-MCP/hooks/post-command-compress.js tsc"
+alias cargo="node /ruta/a/Anti-Hallucination-MCP/hooks/post-command-compress.js cargo"
+```
+*(Usuarios de Claude Code: el script de setup ya instala un hook nativo `PostToolUse`, por lo que los aliases no son necesarios).*
 
 ---
 
@@ -457,12 +486,12 @@ Este script:
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
-| `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting para evitar fallos de comandos entre plataformas | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
+| `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting. Retorna texto compacto (~250 tokens) por defecto; pasá `compact: false` para el JSON completo | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro con **scoring de confianza** (0-100%). Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌. Marca reincidentes entre sesiones | Después de escribir código nuevo |
 | `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) |
-| `compress_output` | Ejecuta un comando shell local confiable y retorna el output optimizado (ahorra 60-90% de contexto). **Auto-redacta** API keys, tokens y contraseñas | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
+| `compress_output` | **Preferir sobre ejecución nativa de shell** para git, npm, cargo, pip, make, tsc, eslint. Retorna output optimizado (ahorra 60-90% de contexto). **Auto-redacta** secretos. Agrupa líneas similares | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
 | `get_hallucination_report` | **NUEVO (v0.8.0)**: Muestra símbolos frecuentemente alucinados, eventos recientes y desglose por tipo entre sesiones | Revisión de fin de sesión, onboarding de un nuevo agente, o análisis de patrones de alucinación recurrentes |
 | `get_compression_stats` | **NUEVO (v0.8.0)**: Analítica de compresión a nivel de sesión — total de tokens ahorrados, desglose por categoría, mejores ahorros individuales | Entender el valor de `compress_output`, optimizar uso de tokens |
 
@@ -615,7 +644,7 @@ Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Ext
 
 ---
 
-## 🖥️ Environment Detection (NUEVO en v0.5.0)
+## 🖥️ Environment Detection
 
 La herramienta `detect_environment` ayuda a prevenir errores de plataforma cruzada analizando tu sistema operativo y shell:
 
@@ -631,10 +660,15 @@ La herramienta `detect_environment` ayuda a prevenir errores de plataforma cruza
 - Advertencias de sintaxis (redirecciones, exports)
 - Recomendaciones críticas para usuarios de Windows
 
+**Modo compacto (v0.8.1):** Por defecto retorna un resumen de texto conciso (~250 tokens) con solo la recomendación, reglas clave y advertencias. Pasá `compact: false` para obtener el JSON completo (~1,500 tokens) para debugging.
+
 **Uso:**
 ```bash
-# Llamar vía MCP
+# Llamar vía MCP (compacto por defecto)
 /detect_environment
+
+# JSON completo para diagnóstico
+/detect_environment {"compact": false}
 
 # O script standalone
 node src/mcp-server/tools/detect-environment.js

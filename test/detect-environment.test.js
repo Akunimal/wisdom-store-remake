@@ -15,12 +15,20 @@ test('detectEnvironmentHandler returns stable environment guidance', async () =>
   assert.ok(result.shell.recommended.command, 'Should include an example command');
 });
 
-test('handleDetectEnvironment returns JSON MCP content', async () => {
-  const response = await handleDetectEnvironment();
+test('handleDetectEnvironment returns JSON by default', async () => {
+  const response = await handleDetectEnvironment({});
   const payload = JSON.parse(response.content[0].text);
 
   assert.strictEqual(response.content[0].type, 'text');
-  assert.ok(payload.system.os, 'MCP response should contain OS');
+  assert.ok(payload.system.os, 'Verbose MCP response should contain OS');
+});
+
+test('handleDetectEnvironment returns compact text when compact is true', async () => {
+  const response = await handleDetectEnvironment({ compact: true });
+  assert.strictEqual(response.content[0].type, 'text');
+  // Compact mode returns plain text, not JSON
+  assert.ok(response.content[0].text.includes('Recommended shell:'), 'Compact output should include recommendation');
+  assert.ok(!response.content[0].text.startsWith('{'), 'Compact output should not be JSON');
 });
 
 test('Windows detection includes WSL/Git Bash diagnostics when applicable', async () => {

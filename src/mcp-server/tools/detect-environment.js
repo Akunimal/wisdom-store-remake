@@ -539,8 +539,61 @@ export async function detectEnvironmentHandler() {
   };
 }
 
-export async function handleDetectEnvironment() {
+function formatCompact(result) {
+  const lines = [];
+
+  // Recommendation block
+  for (const rec of result.recommendations) {
+    lines.push(rec);
+  }
+
+  // Key rules (flatten to essentials)
+  if (result.rules.general?.length) {
+    lines.push('');
+    lines.push('Rules:');
+    for (const rule of result.rules.general) {
+      lines.push(`- ${rule}`);
+    }
+  }
+
+  if (result.rules.quoting?.length) {
+    for (const rule of result.rules.quoting) {
+      lines.push(`- ${rule}`);
+    }
+  }
+
+  // Critical command notes (only non-obvious ones)
+  if (result.rules.commands) {
+    const critical = Object.entries(result.rules.commands)
+      .filter(([, v]) => !v.includes('not available') && !v.includes('not found'))
+      .slice(0, 5);
+    if (critical.length) {
+      lines.push('');
+      lines.push('Commands:');
+      for (const [cmd, note] of critical) {
+        lines.push(`- ${cmd}: ${note}`);
+      }
+    }
+  }
+
+  // Path info (one line)
+  if (result.rules.paths?.note) {
+    lines.push('');
+    lines.push(`Paths: ${result.rules.paths.note}`);
+  }
+
+  return lines.join('\n');
+}
+
+export async function handleDetectEnvironment(args) {
   const result = await detectEnvironmentHandler();
+  const compact = args?.compact === true; // default: false
+
+  if (compact) {
+    return {
+      content: [{ type: 'text', text: formatCompact(result) }]
+    };
+  }
 
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]

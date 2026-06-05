@@ -728,8 +728,10 @@ function addSymbol(category, name, filePath, line) {
 /**
  * Generate a compact project overview for context injection.
  */
-export function generateOverview(projectRoot, scanResult) {
+export function generateOverview(projectRoot, scanResult, options = {}) {
   const { files, symbols } = scanResult;
+  const maxFiles = options.maxFiles || 100;
+  const detail = options.detail || 'summary';
   const lines = ['# Project Overview\n'];
 
   // File tree (compact — group by directory)
@@ -744,12 +746,37 @@ export function generateOverview(projectRoot, scanResult) {
   const totalLines = files.reduce((sum, f) => sum + f.lines, 0);
   lines.push(`Total: ${totalLines.toLocaleString()} lines\n`);
 
+  let fileCount = 0;
+  let truncatedFiles = false;
+
   for (const [dir, dirFiles] of Object.entries(dirs).sort()) {
-    const fileList = dirFiles.map(f => {
+    if (fileCount >= maxFiles) {
+      truncatedFiles = true;
+      break;
+    }
+    
+    let filesToShow = dirFiles;
+    if (fileCount + dirFiles.length > maxFiles) {
+      filesToShow = dirFiles.slice(0, maxFiles - fileCount);
+      truncatedFiles = true;
+    }
+
+    const fileList = filesToShow.map(f => {
       const name = path.basename(f.path);
       return `${name} (${f.lines}L)`;
     }).join(', ');
-    lines.push(`- **${dir || '.'}**/: ${fileList}`);
+    
+    lines.push(`- **${dir || '.'}**/: ${fileList}${filesToShow.length < dirFiles.length ? ', ...' : ''}`);
+    fileCount += filesToShow.length;
+    
+    if (truncatedFiles) break;
+  }
+  
+  if (truncatedFiles) {
+    const remaining = files.length - fileCount;
+    if (remaining > 0) {
+      lines.push(`- ... and ${remaining} more files in other directories.`);
+    }
   }
   lines.push('');
 
@@ -760,20 +787,22 @@ export function generateOverview(projectRoot, scanResult) {
   lines.push(`## Symbols`);
   lines.push(`Functions: ${funcCount}, Classes/Types: ${classCount}, Exports: ${exportCount}\n`);
 
-  if (classCount > 0 && classCount <= 50) {
-    lines.push(`### Classes/Types`);
-    for (const [name, info] of Object.entries(symbols.classes).sort()) {
-      lines.push(`- **${name}** — ${info.file}:${info.line}`);
+  if (detail !== 'summary') {
+    if (classCount > 0 && classCount <= 50) {
+      lines.push(`### Classes/Types`);
+      for (const [name, info] of Object.entries(symbols.classes).sort()) {
+        lines.push(`- **${name}** — ${info.file}:${info.line}`);
+      }
+      lines.push('');
     }
-    lines.push('');
-  }
 
-  if (exportCount > 0 && exportCount <= 80) {
-    lines.push(`### Exports`);
-    for (const [name, info] of Object.entries(symbols.exports).sort()) {
-      lines.push(`- ${name} — ${info.file}:${info.line}`);
+    if (exportCount > 0 && exportCount <= 80) {
+      lines.push(`### Exports`);
+      for (const [name, info] of Object.entries(symbols.exports).sort()) {
+        lines.push(`- ${name} — ${info.file}:${info.line}`);
+      }
+      lines.push('');
     }
-    lines.push('');
   }
 
   // API Routes (compact: group by file, show methods only)

@@ -84,12 +84,12 @@ Todos los tests dependían de librerías eliminadas:
 
 | Tool | Propósito | Estado |
 |------|-----------|--------|
-| `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes | ✅ Companion |
+| `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes. **Modo compacto** por defecto (~250 tokens vs ~1,500 tokens) | ✅ Companion |
 | `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
 | `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados con **confidence scoring** y **watchlist** | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |
-| `compress_output` | Ejecuta comandos locales confiables y comprime output. **Auto-redacta secretos** (API keys, tokens, passwords) | ⚠️ Companion con superficie de ejecución |
+| `compress_output` | Ejecuta comandos y comprime output. **Auto-redacta secretos**. **Agrupa líneas similares** (v0.8.1) | ⚠️ Companion con superficie de ejecución |
 | `get_hallucination_report` | Reporte de alucinaciones frecuentes, recientes y por tipo entre sesiones | ✅ Companion (v0.8.0) |
 | `get_compression_stats` | Analítica de compresión a nivel de sesión: tokens ahorrados, categorías, top ahorros | ✅ Companion (v0.8.0) |
 
@@ -200,9 +200,9 @@ wisdom-store/
 │       ├── get-project-overview.js # ✅
 │       ├── check-symbols.js      # ✅ CORE + confidence + watchlist
 │       ├── refresh-symbols.js    # ✅
-│       ├── detect-environment.js # ✅
+│       ├── detect-environment.js # ✅ + compact mode (v0.8.1)
 │       ├── compress-output.js    # ✅ + secret redaction + fail-open
-│       ├── token-compressor.js   # ✅ + dedup + threshold + analytics
+│       ├── token-compressor.js   # ✅ + dedup + grouping + threshold + analytics
 │       ├── get-hallucination-report.js # ✅ NEW (v0.8.0)
 │       ├── get-compression-stats.js   # ✅ NEW (v0.8.0)
 │       └── strategies/

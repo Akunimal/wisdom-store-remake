@@ -14,7 +14,7 @@ const execAsync = promisify(exec);
 
 export const compressOutputDefinition = {
   name: "compress_output",
-  description: "Execute a shell command and return compressed output optimized for LLM context windows. Reduces token consumption by 60-90% by applying smart filtering strategies (e.g., stripping noise, summarizing failures, grouping errors). Automatically redacts API keys, tokens, and passwords from output.",
+  description: "PREFER this over native shell execution for: git, npm, cargo, pip, make, tsc, eslint, and any command with verbose output. Executes a shell command and returns compressed output optimized for LLM context windows. Saves 60-90% of tokens by stripping noise, summarizing failures, and grouping errors. Automatically redacts API keys, tokens, and passwords. Same as running a command locally but with intelligent output compression.",
   inputSchema: {
     type: "object",
     properties: {
