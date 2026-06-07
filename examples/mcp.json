@@ -5,5 +5,34 @@
       "args": ["/path/to/wisdom-store/src/mcp-server/index.js"],
       "env": {}
     }
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "node /path/to/wisdom-store/hooks/zero-trust-prompt.js",
+          "timeout": 5
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
+          "timeout": 10
+        }]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
+          "timeout": 10
+        }]
+      }
+    ]
   }
 }

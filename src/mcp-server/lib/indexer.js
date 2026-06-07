@@ -718,8 +718,16 @@ function extractHtml(filePath, content, symbols) {
 }
 
 function addSymbol(category, name, filePath, line) {
+  let namespace = 'root';
+  const parts = filePath.split(/[/\\]/);
+  if (parts.length > 1 && (parts[0] === 'apps' || parts[0] === 'packages' || parts[0] === 'services')) {
+    namespace = `${parts[0]}/${parts[1]}`;
+  } else if (parts.length > 1) {
+    namespace = parts[0];
+  }
+
   if (!category[name]) {
-    category[name] = { file: filePath, line, usages: 1 };
+    category[name] = { file: filePath, line, usages: 1, namespace };
   } else {
     category[name].usages++;
   }

@@ -265,6 +265,10 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 
 The hook reads JSON input and responds with warnings to stderr (exit code 2).
 
+### CI/CD Integration
+
+You can integrate the anti-hallucination check into your GitHub Actions workflow to prevent merging code with hallucinated symbols. See [`.github/workflows/symbol-check.yml`](.github/workflows/symbol-check.yml) for an example.
+
 ---
 
 ## 📁 Storage Structure
@@ -607,6 +611,10 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
   }
 }
 ```
+
+### Integración con CI/CD
+
+Puedes integrar la verificación anti-alucinación en tu workflow de GitHub Actions para evitar que se aprueben PRs con símbolos alucinados. Consulta [`.github/workflows/symbol-check.yml`](.github/workflows/symbol-check.yml) para ver un ejemplo de implementación.
 
 ---
 

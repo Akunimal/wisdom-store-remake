@@ -23,3 +23,23 @@ This project uses wisdom-store-lite for symbol checking and hallucination preven
 ### What NOT to do
 - Don't call `reindex_project` manually — use `get_project_overview` which includes a fresh scan
 - Don't ignore `check_symbols` warnings — they catch real hallucinations and typos
+
+## Anti-Drift Zero-Trust (v0.9.0)
+
+This project uses the zero-trust prompt hook to re-inject anti-hallucination rules every turn.
+
+### How it works
+- The `UserPromptSubmit` hook fires before every response, injecting a deterministic reminder:
+  - Never assume a symbol exists — verify with `check_symbols` or read the file first
+  - Never assume a file path — use `list_dir` or find to confirm
+  - Never assume API routes — check the actual router/handler files
+- If there's a **watchlist** of previously hallucinated symbols (3+ occurrences), they're injected as a warning
+- This combats **context drift** where the model forgets rules from CLAUDE.md over long conversations
+
+### Modes
+- Standard (default): Core rules + watchlist (~100 tokens)
+- `--minimal`: Just the rules, no watchlist (~50 tokens)
+- `--dynamic`: Adds registry stats like total symbols and last index time (~150 tokens)
+
+### Note
+- The zero-trust hook is currently exclusive to Claude Code (requires `UserPromptSubmit` hook support)

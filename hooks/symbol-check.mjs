@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 
 const args = process.argv.slice(2);
+
 const filePath = args[0];
 const symbolsFile = args[1];
 const diffOnly = args.includes('--diff-only');
@@ -27,9 +28,22 @@ try {
   content = fs.readFileSync(filePath, 'utf8');
 } catch { process.exit(0); }
 
+let fullOriginalContent = content;
+const isMarkdown = filePath.endsWith('.md');
+
+if (isMarkdown) {
+  const codeBlockRegex = /```(?:javascript|js|typescript|ts|jsx|tsx)([\s\S]*?)```/gi;
+  let mdCode = '';
+  let match;
+  while ((match = codeBlockRegex.exec(fullOriginalContent)) !== null) {
+    mdCode += match[1] + '\n';
+  }
+  content = mdCode;
+}
+
 // Read diff content from stdin if in diff-only mode
 let diffContent = '';
-if (diffOnly) {
+if (diffOnly && !isMarkdown) {
   try {
     const readStdin = () => {
       return new Promise((resolve) => {
@@ -51,7 +65,7 @@ if (diffOnly) {
 }
 
 // The content to scan for symbols — either the diff or the full file
-const scanContent = diffOnly ? diffContent : content;
+const scanContent = (diffOnly && !isMarkdown) ? diffContent : content;
 
 // Read symbol registry
 let registry;
@@ -81,8 +95,98 @@ function stripCommentsAndStrings(code) {
     .replace(/`(?:[^`\\]|\\.)*`/g, '""')
     // Double-quoted strings
     .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-    // Single-quoted strings
-    .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+      // Single-quoted strings
+      .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+}
+
+function replaceIdentifierInCode(code, from, to) {
+  let output = '';
+  let i = 0;
+  let state = 'code';
+
+  const isIdentChar = (char) => /[a-zA-Z0-9_$]/.test(char || '');
+
+  while (i < code.length) {
+    const char = code[i];
+    const next = code[i + 1];
+
+    if (state === 'lineComment') {
+      output += char;
+      if (char === '\n') state = 'code';
+      i++;
+      continue;
+    }
+
+    if (state === 'blockComment') {
+      output += char;
+      if (char === '*' && next === '/') {
+        output += next;
+        i += 2;
+        state = 'code';
+      } else {
+        i++;
+      }
+      continue;
+    }
+
+    if (state === 'single' || state === 'double' || state === 'template') {
+      output += char;
+      if (char === '\\') {
+        output += next || '';
+        i += next ? 2 : 1;
+        continue;
+      }
+      if ((state === 'single' && char === "'") ||
+          (state === 'double' && char === '"') ||
+          (state === 'template' && char === '`')) {
+        state = 'code';
+      }
+      i++;
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      output += char + next;
+      i += 2;
+      state = 'lineComment';
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      output += char + next;
+      i += 2;
+      state = 'blockComment';
+      continue;
+    }
+    if (char === "'") {
+      output += char;
+      i++;
+      state = 'single';
+      continue;
+    }
+    if (char === '"') {
+      output += char;
+      i++;
+      state = 'double';
+      continue;
+    }
+    if (char === '`') {
+      output += char;
+      i++;
+      state = 'template';
+      continue;
+    }
+
+    if (code.startsWith(from, i) && !isIdentChar(code[i - 1]) && !isIdentChar(code[i + from.length])) {
+      output += to;
+      i += from.length;
+      continue;
+    }
+
+    output += char;
+    i++;
+  }
+
+  return output;
 }
 
 const referenced = new Set();
@@ -181,6 +285,12 @@ const badPaths = [];
 
 const localPaths = new Set();
 for (const match of scanContent.matchAll(/(?:import|export)\s+.*?from\s*['"](\.[^'"]+)['"]/g)) {
+  localPaths.add(match[1]);
+}
+for (const match of scanContent.matchAll(/import\s*['"](\.[^'"]+)['"]/g)) {
+  localPaths.add(match[1]);
+}
+for (const match of scanContent.matchAll(/import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
   localPaths.add(match[1]);
 }
 for (const match of scanContent.matchAll(/require\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
@@ -288,8 +398,54 @@ for (const match of stripped.matchAll(/(?<![.\w])([a-zA-Z_]\w*)\s*\(/g)) {
   referenced.add(name);
 }
 
-// Check which referenced symbols are unknown
+// Levenshtein function
+function getLevenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const matrix = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return matrix[a.length][b.length];
+}
+
+// Namespace helper
+function getNamespace(fPath) {
+  const parts = fPath.split(/[/\\]/);
+  if (parts.length > 1 && (parts[0] === 'apps' || parts[0] === 'packages' || parts[0] === 'services')) {
+    return `${parts[0]}/${parts[1]}`;
+  } else if (parts.length > 1) {
+    return parts[0];
+  }
+  return 'root';
+}
+
+const currentNamespace = getNamespace(path.relative(path.dirname(symbolsFile), filePath).replace(/^\.\.[\/\\]/, ''));
 const unknowns = [];
+const fixedTypos = [];
+const namespaceViolations = [];
+
+// Helper to check cross-boundary namespace
+function isNamespaceViolation(symbolName, fileNs) {
+  const symbolInfo = registry.functions?.[symbolName] || registry.classes?.[symbolName] || registry.variables?.[symbolName] || registry.exports?.[symbolName];
+  if (!symbolInfo || !symbolInfo.namespace) return false;
+  
+  const symNs = symbolInfo.namespace;
+  if (symNs === fileNs) return false;
+  if (symNs === 'root' || symNs.includes('shared') || symNs.includes('common')) return false;
+  return symNs;
+}
+
+// Check which referenced symbols are unknown
 for (const name of referenced) {
   if (name.length <= 2) continue;
   if (/^[A-Z_]+$/.test(name)) continue; // CONSTANTS
@@ -304,9 +460,31 @@ for (const name of referenced) {
   const strippedFull = stripCommentsAndStrings(content);
   if (paramInFunc.test(strippedFull)) continue;
 
+  if (known.has(name)) {
+    const violation = isNamespaceViolation(name, currentNamespace);
+    if (violation) {
+      namespaceViolations.push({ name, from: violation, to: currentNamespace });
+    }
+    continue;
+  }
+
   // Check: not in registry AND looks like a project symbol
-  if (!known.has(name)) {
-    if (/^[a-z][a-zA-Z0-9]+$/.test(name) || /^[A-Z][a-z][a-zA-Z0-9]+$/.test(name)) {
+  if (/^[a-zA-Z_$][\w$]*$/.test(name)) {
+    let bestMatch = null;
+    let highestConfidence = 0;
+    for (const k of known) {
+      if (Math.abs(k.length - name.length) > 3) continue;
+      const dist = getLevenshteinDistance(name, k);
+      const confidence = 1 - (dist / Math.max(name.length, k.length));
+      if (confidence >= 0.85 && confidence > highestConfidence) {
+        highestConfidence = confidence;
+        bestMatch = k;
+      }
+    }
+
+    if (bestMatch && highestConfidence >= 0.85) {
+      fixedTypos.push({ wrong: name, right: bestMatch });
+    } else {
       unknowns.push(name);
     }
   }
@@ -372,7 +550,35 @@ if (Object.keys(apiRoutes).length > 0) {
 
 const fileName = filePath.split('/').pop();
 const warnings = [];
-const mode = diffOnly ? ' (in new code)' : '';
+const infos = [];
+const mode = (diffOnly && !isMarkdown) ? ' (in new code)' : '';
+
+if (fixedTypos.length > 0) {
+  if (isMarkdown) {
+    warnings.push(`Symbol typo check: ${fixedTypos.length} possible typo(s) in markdown code fences for ${fileName}:`);
+    for (const typo of fixedTypos) {
+      warnings.push(`  - ${typo.wrong} → ${typo.right}`);
+    }
+  } else {
+    let newContent = fullOriginalContent;
+    for (const typo of fixedTypos) {
+      newContent = replaceIdentifierInCode(newContent, typo.wrong, typo.right);
+      infos.push(`[INFO] Detecté el typo '${typo.wrong}', lo auto-corregí a '${typo.right}' por ti en ${fileName}.`);
+    }
+    try {
+      fs.writeFileSync(filePath, newContent, 'utf8');
+    } catch (e) {
+      warnings.push(`No se pudo auto-corregir el archivo: ${e.message}`);
+    }
+  }
+}
+
+if (typeof namespaceViolations !== 'undefined' && namespaceViolations.length > 0) {
+  warnings.push(`Monorepo Check: ${namespaceViolations.length} símbolo(s) importado(s) de otro namespace:`);
+  for (const v of namespaceViolations) {
+    warnings.push(`  - Intento de usar el símbolo '${v.name}' del namespace '${v.from}' en el archivo de '${v.to}'.`);
+  }
+}
 
 if (badRoutes.length > 0) {
   warnings.push(`API route check: ${badRoutes.length} route(s) not found in project index for ${fileName}${mode}:`);
@@ -396,6 +602,10 @@ if (unknowns.length > 0) {
   }
   if (unknowns.length > 10) warnings.push(`  ... and ${unknowns.length - 10} more`);
   warnings.push(`Run refresh_symbols to update the registry if these are intentional.`);
+}
+
+if (infos.length > 0) {
+  console.error(infos.join('\n'));
 }
 
 if (warnings.length > 0) {

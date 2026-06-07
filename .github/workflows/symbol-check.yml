@@ -1,0 +1,58 @@
+name: Anti-Hallucination Check
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  symbol-check:
+    name: Verify No Hallucinated Symbols
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Needed for git diff
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reindex project
+        run: node scripts/reindex.mjs
+        
+      - name: Check changed files
+        run: |
+          # Obtener archivos modificados en el PR (solo JS/TS)
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} HEAD | grep -E '\.(js|mjs|cjs|ts|tsx)$' || true)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No JS/TS files changed."
+            exit 0
+          fi
+          
+          FAILED=0
+          
+          for FILE in $CHANGED_FILES; do
+            if [ -f "$FILE" ]; then
+              echo "Checking $FILE..."
+              # Ejecutar symbol-check. Si el exit code es 2, hay advertencias (alucinaciones)
+              if ! node hooks/symbol-check.mjs "$FILE" ".wisdom/symbols.json"; then
+                echo "❌ Hallucination detected in $FILE"
+                FAILED=1
+              else
+                echo "✅ $FILE passed"
+              fi
+            fi
+          done
+          
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Anti-Hallucination check failed. Please review the warnings above."
+            exit 1
+          fi

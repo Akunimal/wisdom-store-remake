@@ -39,11 +39,11 @@ if [ -z "$FILE_PATH" ]; then
   exit 0
 fi
 
-FILE_PATH="${FILE_PATH//\\//}"
+FILE_PATH=$(FILE_PATH="$FILE_PATH" node -e 'process.stdout.write(process.env.FILE_PATH.replace(/\\/g, "/"))')
 
-# Only check code files
+# Only check code and markdown files
 case "$FILE_PATH" in
-  *.js|*.mjs|*.cjs|*.jsx|*.ts|*.tsx|*.py|*.go|*.rs) ;;
+  *.js|*.mjs|*.cjs|*.jsx|*.ts|*.tsx|*.py|*.go|*.rs|*.md) ;;
   *) exit 0 ;;
 esac
 
@@ -79,6 +79,8 @@ if [ -n "$PROJECT_ROOT" ]; then
     if [ $SYMBOL_EXIT -eq 2 ] && [ -n "$SYMBOL_OUTPUT" ]; then
       echo -e "$SYMBOL_OUTPUT" >&2
       exit 2
+    elif [ $SYMBOL_EXIT -eq 0 ] && [ -n "$SYMBOL_OUTPUT" ]; then
+      echo -e "$SYMBOL_OUTPUT" >&2
     fi
   fi
 fi

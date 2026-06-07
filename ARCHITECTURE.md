@@ -103,17 +103,19 @@ src/mcp-server/lib/
   ✅ compression-stats.js    — Analítica in-memory de compresión por sesión (v0.8.0)
 ```
 
-### Hooks anti-alucinación (2 archivos)
+### Hooks anti-alucinación (3 archivos)
 
 ```
 hooks/
   ✅ symbol-check.mjs          — Verificador standalone de símbolos
   ✅ post-write-symbol-check.sh — Hook automático post-Write/Edit
+  ✅ zero-trust-prompt.js       — Hook UserPromptSubmit anti-drift (v0.9.0)
 ```
 
 **Compatibilidad del servidor MCP y los hooks:**
 - **Servidor MCP:** Compatible de forma nativa con cualquier cliente MCP (Claude Code, Codex, Antigravity IDE, OpenCode, Cursor, Windsurf, etc.).
-- **Hook Automático:** Funciona de forma automática en Claude Code (vía `PostToolUse` hooks). En Codex de forma experimental/manual si el runtime expone un payload `post_write` compatible. Otros IDEs se benefician de las tools pero no disparan el hook automáticamente aún.
+- **Hook PostToolUse:** Funciona de forma automática en Claude Code (vía `PostToolUse` hooks). En Codex de forma experimental/manual si el runtime expone un payload `post_write` compatible. Otros IDEs se benefician de las tools pero no disparan el hook automáticamente aún.
+- **Hook UserPromptSubmit (Zero-Trust):** Exclusivo Claude Code. Re-inyecta reglas anti-alucinación cada turno para combatir context drift. Incluye watchlist dinámica de alucinaciones previas.
 
 ### Tests mantenidos (1 archivo nuevo)
 
@@ -217,7 +219,8 @@ wisdom-store/
 │           └── dedup-filter.js   # ✅ NEW (v0.8.0)
 ├── hooks/
 │   ├── symbol-check.mjs          # ✅ Verificador standalone
-│   ├── post-write-symbol-check.sh # ✅ Hook automático
+│   ├── post-write-symbol-check.sh # ✅ Hook automático PostToolUse
+│   ├── zero-trust-prompt.js      # ✅ Hook UserPromptSubmit anti-drift (v0.9.0)
 │   └── post-command-compress.js   # ✅ Hook compresión
 ├── test/
 │   ├── symbol-check.test.js      # ✅ Tests del core
@@ -225,7 +228,8 @@ wisdom-store/
 │   ├── detect-environment.test.js # ✅ Tests de entorno
 │   ├── secret-redactor.test.js   # ✅ NEW (v0.8.0)
 │   ├── dedup-filter.test.js      # ✅ NEW (v0.8.0)
-│   └── hallucination-tracker.test.js # ✅ NEW (v0.8.0)
+│   ├── hallucination-tracker.test.js # ✅ NEW (v0.8.0)
+│   └── zero-trust-prompt.test.js    # ✅ NEW (v0.9.0)
 ├── examples/
 │   ├── CLAUDE.md                 # Documentación de uso
 │   └── mcp.json                  # Ejemplo de configuración
@@ -263,13 +267,22 @@ En `~/.claude/settings.json`:
 }
 ```
 
-### Configurar hook anti-alucinación
+### Configurar hooks anti-alucinación
 
 En `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "node /path/to/wisdom-store/hooks/zero-trust-prompt.js",
+          "timeout": 5
+        }]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write",
@@ -291,6 +304,132 @@ En `~/.claude/settings.json`:
   }
 }
 ```
+
+**Modos del hook zero-trust:**
+- Sin flags: Standard (~100 tokens) — reglas core + watchlist si existe
+- `--minimal`: Solo reglas core (~50 tokens), sin watchlist
+- `--dynamic`: Incluye stats del registry (número de símbolos, última indexación)
+
+### Workflow típico
+
+```
+1. get_project_overview → entender el codebase
+2. Trabajar en la tarea
+3. check_symbols (automático via hook) → detectar hallucinations
+4. Si hay unknowns legítimos: refresh_symbols
+```
+
+---
+
+## 🧪 Verificación
+
+### Tests automáticos
+
+```bash
+npm test
+```
+
+**Resultado esperado:**
+```
+✔ symbol-check detects known symbols (Xms)
+✔ symbol-check reports unknown symbols (Xms)
+✔ symbol-check fuzzy matches typos (Xms)
+✔ symbol-check handles empty registry (Xms)
+✔ symbol-check handles missing file (Xms)
+
+5 passing (XXms)
+```
+
+### Verificación manual
+
+1. **Reindexar proyecto:**
+   ```bash
+   npx @modelcontextprotocol/cli
+   > reindex_project
+   ```
+
+2. **Verificar símbolos conocidos:**
+   ```bash
+   > check_symbols {"symbols": ["express", "useCatalog"]}
+   # Debería reportar: confirmed
+   ```
+
+3. **Verificar símbolos hallucinados:**
+   ```bash
+   > check_symbols {"symbols": ["nonExistentFunction", "fakeModule"]}
+   # Debería reportar: unknown
+   ```
+
+4. **Probar hook post-write:**
+   ```bash
+   # Hacer un Write/Edit en Claude Code
+   # El hook debería dispararse automáticamente
+   # Ver stderr por warnings
+   ```
+
+---
+
+## 📈 Beneficios de la sanitización
+npm install
+```
+
+### Configurar MCP
+
+En `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "wisdom-store": {
+      "command": "node",
+      "args": ["/path/to/wisdom-store/src/mcp-server/index.js"]
+    }
+  }
+}
+```
+
+### Configurar hooks anti-alucinación
+
+En `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "node /path/to/wisdom-store/hooks/zero-trust-prompt.js",
+          "timeout": 5
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
+          "timeout": 10
+        }]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [{
+          "type": "command",
+          "command": "/path/to/wisdom-store/hooks/post-write-symbol-check.sh",
+          "timeout": 10
+        }]
+      }
+    ]
+  }
+}
+```
+
+**Modos del hook zero-trust:**
+- Sin flags: Standard (~100 tokens) — reglas core + watchlist si existe
+- `--minimal`: Solo reglas core (~50 tokens), sin watchlist
+- `--dynamic`: Incluye stats del registry (número de símbolos, última indexación)
 
 ### Workflow típico
 
@@ -357,7 +496,6 @@ npm test
 - ✅ **Menos ruido**: 6 tools claras vs 24 tools confusas
 - ✅ **Más rápido**: Indexado y chequeo optimizados
 - ✅ **Más confiable**: Solo código probado y mantenido
-
 ### Para el stack
 - ✅ **Sin solapamiento**: Cada herramienta tiene un propósito único
 - ✅ **Mejor integración**: Hooks compatibles con Claude Code + Codex
@@ -372,37 +510,13 @@ npm test
 
 ## 🔮 Próximos pasos (opcionales)
 
-### Fase 2: Migración a Serena memories (si se desea)
+### ❌ Fase 3: Hook standalone puro (Descartada)
 
-Script para migrar `.wisdom/sections/*.md` a Serena memories:
-- Leer cada sección
-- Crear memory equivalente con `write_memory`
-- Taggear con metadata (origen, fecha)
-- Archivar `.wisdom/` completo como backup
+La "Opción B" de eliminar el servidor MCP para dejar solo los hooks fue descartada formalmente. A partir de la versión v0.8.0, se agregaron tools nativas valiosas (`get_hallucination_report`, `get_compression_stats`) que otorgan gran valor analítico a través de MCP, por lo que descontinuar el servidor representaría un retroceso.
 
-### Fase 3: Hook standalone puro (Opción B)
+### ✅ Fase 4: Integración con CI/CD (Completado)
 
-Eliminar completamente el MCP y dejar solo los hooks:
-- `reindex.mjs` como script manual o SessionStart hook
-- `symbol-check.mjs` ya es standalone
-- `post-write-symbol-check.sh` ya funciona
-
-**Ventaja:** Zero overhead de servidor MCP.
-**Desventaja:** No se puede llamar `check_symbols` on-demand desde el chat.
-
-### Fase 4: Integración con CI/CD
-
-Agregar symbol-check como paso de validación:
-```yaml
-# .github/workflows/symbol-check.yml
-jobs:
-  anti-hallucination:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm install
-      - run: node hooks/symbol-check.mjs --ci
-```
+Se agregó `symbol-check` como paso de validación obligatorio en GitHub Actions mediante `.github/workflows/symbol-check.yml`. El workflow escanea dinámicamente los archivos cambiados en los PRs y los cruza con `symbol-check.mjs` (previamente regenerando el index en el contenedor).
 
 ---
 

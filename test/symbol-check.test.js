@@ -26,6 +26,7 @@ test('post-write-symbol-check.sh exists and is executable', () => {
   const content = fs.readFileSync(hookPath, 'utf8');
   assert.ok(content.startsWith('#!/bin/bash'), 'Should be a bash script');
   assert.ok(content.includes('symbol-check.mjs'), 'Should call symbol-check.mjs');
+  assert.ok(content.includes('replace(/\\\\/g, "/")'), 'Should normalize Windows file paths without dropping separators');
 });
 
 test('MCP server index.js has correct tools', () => {
@@ -203,6 +204,110 @@ test('symbol hook ignores imported external bindings', () => {
   });
 
   assert.strictEqual(result.status, 0, result.stderr);
+});
+
+test('symbol hook reports missing side-effect imports', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-side-effect-'));
+  const sourcePath = path.join(tempRoot, 'index.js');
+  const registryPath = path.join(tempRoot, 'symbols.json');
+
+  fs.writeFileSync(sourcePath, [
+    "import './missing.js';",
+    ''
+  ].join('\n'));
+  fs.writeFileSync(registryPath, JSON.stringify({
+    _meta: {},
+    functions: { knownFunc: { file: 'index.js', line: 1, namespace: 'root' } },
+    classes: {},
+    variables: {},
+    exports: {},
+    apiRoutes: {},
+    htmlPages: {}
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.strictEqual(result.status, 2, result.stderr);
+  assert.ok(result.stderr.includes('./missing.js'), result.stderr);
+});
+
+test('symbol hook auto-corrects typos only in executable code', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-typo-'));
+  const sourcePath = path.join(tempRoot, 'index.js');
+  const registryPath = path.join(tempRoot, 'symbols.json');
+
+  fs.writeFileSync(sourcePath, [
+    '// knownFunk should stay in comments',
+    "const message = 'knownFunk should stay in strings';",
+    'knownFunk();',
+    ''
+  ].join('\n'));
+  fs.writeFileSync(registryPath, JSON.stringify({
+    _meta: {},
+    functions: { knownFunc: { file: 'index.js', line: 1, namespace: 'root' } },
+    classes: {},
+    variables: { message: { file: 'index.js', line: 2, namespace: 'root' } },
+    exports: {},
+    apiRoutes: {},
+    htmlPages: {}
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  const updated = fs.readFileSync(sourcePath, 'utf8');
+  assert.ok(updated.includes('// knownFunk should stay in comments'));
+  assert.ok(updated.includes("'knownFunk should stay in strings'"));
+  assert.ok(updated.includes('knownFunc();'));
+});
+
+test('symbol hook warns on markdown code typos without rewriting prose', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-markdown-'));
+  const sourcePath = path.join(tempRoot, 'README.md');
+  const registryPath = path.join(tempRoot, 'symbols.json');
+
+  const original = [
+    'The prose mentions knownFunk and must not be edited.',
+    '',
+    '```js',
+    'knownFunk();',
+    '```',
+    ''
+  ].join('\n');
+  fs.writeFileSync(sourcePath, original);
+  fs.writeFileSync(registryPath, JSON.stringify({
+    _meta: {},
+    functions: { knownFunc: { file: 'index.js', line: 1, namespace: 'root' } },
+    classes: {},
+    variables: {},
+    exports: {},
+    apiRoutes: {},
+    htmlPages: {}
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.strictEqual(result.status, 2, result.stderr);
+  assert.ok(result.stderr.includes('knownFunk'), result.stderr);
+  assert.equal(fs.readFileSync(sourcePath, 'utf8'), original);
 });
 
 test('indexer.js has core functions', () => {
