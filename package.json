@@ -54,7 +54,7 @@
   "optionalDependencies": {
     "tree-sitter-python": "^0.23.0",
     "tree-sitter-go": "^0.23.0",
-    "tree-sitter-rust": "^0.23.0"
+    "tree-sitter-rust": "^0.24.0"
   },
   "devDependencies": {}
 }
