@@ -85,4 +85,4 @@ jobs:
           if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
             sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
           fi
-          npm publish --provenance --access public
+          npm publish --provenance --access public --loglevel http
