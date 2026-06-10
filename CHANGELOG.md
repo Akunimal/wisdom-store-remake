@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.1] - 2026-06-10
 
 ### Changed
 - **Typo auto-fix is now opt-in** (`ANTIHALL_AUTOFIX=1`): by default `symbol-check.mjs` reports probable typos as warnings instead of rewriting the file. A fuzzy match at ≥85% confidence can still be wrong (e.g. a brand-new `getUser` rewritten to an existing `getUsers` while the registry is stale), and silently mutating a file the agent just wrote desyncs the agent's view of it.
