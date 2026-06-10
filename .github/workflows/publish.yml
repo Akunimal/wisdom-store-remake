@@ -76,4 +76,13 @@ jobs:
 
       - name: Publish to npm with trusted publishing
         if: steps.package.outputs.published == 'false' && steps.auth.outputs.mode == 'trusted-publishing'
-        run: npm publish --provenance --access public
+        # setup-node's registry-url writes an _authToken=${NODE_AUTH_TOKEN} line
+        # whose placeholder value makes npm send a garbage token instead of
+        # using OIDC, which the registry rejects as 404. Remove it so the npm
+        # CLI (>=11.5.1) performs the trusted publishing OIDC exchange.
+        run: |
+          npm config delete //registry.npmjs.org/:_authToken --location=user 2>/dev/null || true
+          if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
+          fi
+          npm publish --provenance --access public
