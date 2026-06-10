@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.9.0] - 2026-06-07
+
+### Added
+- **Zero-Trust Anti-Drift Prompt Hook** (`hooks/zero-trust-prompt.js`): fires on `UserPromptSubmit` and re-injects the anti-hallucination core rules every turn, so the model receives them deterministically regardless of conversation length. Surfaces repeat-offender symbols from the watchlist (exit 2 with stderr) and optionally includes registry stats via `--dynamic`.
+- **CI Symbol Check Workflow** (`.github/workflows/symbol-check.yml`): runs the symbol checker on pull requests to catch hallucinated symbols before merge.
+- **Examples**: `examples/CLAUDE.md` and `examples/mcp.json` showing recommended project rules and MCP server configuration.
+- **Markdown support in symbol check**: `hooks/symbol-check.mjs` now extracts fenced JS/TS code blocks from `.md` files and scans only those, instead of treating prose as code.
+- **Namespace violation detection**: the indexer records a `namespace` per symbol (`apps/x`, `packages/y`, top-level dir) and `symbol-check.mjs` warns when a file imports symbols from another namespace.
+- **`scripts/reindex.mjs`**: standalone CLI to regenerate `symbols.json` in CI/CD environments without a running MCP server.
+- **Public exports smoke tests** (`test/public-exports-smoke.test.js`) plus dedicated suites for the symbol-check hook and the zero-trust prompt hook.
+
+### Fixed
+- **Safe typo rewrites**: identifier replacement in `symbol-check.mjs` is now state-machine based (skips strings, template literals, and comments) instead of naive regex replacement, preventing corruption when a typo'd name also appears inside string content.
+- **Side-effect and dynamic imports validated**: `import './x'` and `import('./x')` local paths are now collected and checked, matching the existing `require('./x')` handling.
+- **Prompt hook import side effects**: `zero-trust-prompt.js` no longer executes its CLI path when imported as a module.
+- **Registry stats reporting**: `loadRegistryMeta` counts symbols in object-keyed registry categories (the indexer's actual output format), keeping legacy array support, so `--dynamic` stats are no longer reported as zero.
+
 ## [0.8.1] - 2026-06-05
 
 ### Added
