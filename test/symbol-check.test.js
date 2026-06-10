@@ -237,7 +237,44 @@ test('symbol hook reports missing side-effect imports', () => {
   assert.ok(result.stderr.includes('./missing.js'), result.stderr);
 });
 
-test('symbol hook auto-corrects typos only in executable code', () => {
+test('symbol hook warns about typos by default without rewriting the file', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-typo-warn-'));
+  const sourcePath = path.join(tempRoot, 'index.js');
+  const registryPath = path.join(tempRoot, 'symbols.json');
+
+  const original = [
+    '// knownFunk should stay in comments',
+    "const message = 'knownFunk should stay in strings';",
+    'knownFunk();',
+    ''
+  ].join('\n');
+  fs.writeFileSync(sourcePath, original);
+  fs.writeFileSync(registryPath, JSON.stringify({
+    _meta: {},
+    functions: { knownFunc: { file: 'index.js', line: 1, namespace: 'root' } },
+    classes: {},
+    variables: { message: { file: 'index.js', line: 2, namespace: 'root' } },
+    exports: {},
+    apiRoutes: {},
+    htmlPages: {}
+  }));
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env, ANTIHALL_AUTOFIX: '' }
+  });
+
+  assert.strictEqual(result.status, 2, result.stderr);
+  assert.ok(result.stderr.includes('knownFunk'), result.stderr);
+  assert.ok(result.stderr.includes('knownFunc'), result.stderr);
+  assert.equal(fs.readFileSync(sourcePath, 'utf8'), original);
+});
+
+test('symbol hook auto-corrects typos only in executable code when ANTIHALL_AUTOFIX=1', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-typo-'));
   const sourcePath = path.join(tempRoot, 'index.js');
   const registryPath = path.join(tempRoot, 'symbols.json');
@@ -263,7 +300,8 @@ test('symbol hook auto-corrects typos only in executable code', () => {
     sourcePath,
     registryPath
   ], {
-    encoding: 'utf8'
+    encoding: 'utf8',
+    env: { ...process.env, ANTIHALL_AUTOFIX: '1' }
   });
 
   assert.strictEqual(result.status, 0, result.stderr);

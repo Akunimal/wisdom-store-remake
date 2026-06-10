@@ -265,6 +265,8 @@ Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
 
 The hook reads JSON input and responds with warnings to stderr (exit code 2).
 
+By default, probable typos (fuzzy match ≥85% confidence) are **reported as warnings** so the agent can fix them deliberately. Set `ANTIHALL_AUTOFIX=1` in the environment to let the hook rewrite the typo'd identifier in place automatically (strings, comments, and markdown prose are never touched).
+
 ### CI/CD Integration
 
 You can integrate the anti-hallucination check into your GitHub Actions workflow to prevent merging code with hallucinated symbols. See [`.github/workflows/symbol-check.yml`](.github/workflows/symbol-check.yml) for an example.
@@ -611,6 +613,8 @@ Agregar a `~/.claude/settings.json` (global) o `.claude/settings.json` (proyecto
   }
 }
 ```
+
+Por defecto, los typos probables (fuzzy match ≥85% de confianza) se **reportan como warnings** para que el agente los corrija deliberadamente. Definí `ANTIHALL_AUTOFIX=1` en el entorno para que el hook reescriba el identificador automáticamente (strings, comentarios y prosa markdown nunca se tocan).
 
 ### Integración con CI/CD
 

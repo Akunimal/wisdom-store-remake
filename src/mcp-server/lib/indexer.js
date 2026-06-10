@@ -214,13 +214,15 @@ function walkDir(dir, projectRoot, files, symbols, depth, maxDepth, maxFiles, ex
 
 /**
  * Extract symbols using ast-grep AST parsing.
+ * Returns true if parsing+extraction ran, false if the parse failed
+ * (so callers can fall back to regex extraction).
  */
 function extractWithAst(filePath, content, lang, symbols, lineOffset = 0) {
   let root;
   try {
     root = parse(lang, content).root();
   } catch {
-    return;
+    return false;
   }
 
   try {
@@ -236,6 +238,7 @@ function extractWithAst(filePath, content, lang, symbols, lineOffset = 0) {
   } catch (e) {
     // AST extraction failed — continue without losing other files' data
   }
+  return true;
 }
 
 function extractNamesFromNode(nameNode) {
@@ -390,7 +393,7 @@ function extractJsAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
     // exports.foo = ... or module.exports.foo = ...
     const memberExport = line.match(/^(?:module\.)?exports\.(\w+)\s*=/);
     if (memberExport) {
-      addSymbol(symbols.exports, memberExport[1], filePath, i + 1);
+      addSymbol(symbols.exports, memberExport[1], filePath, i + 1 + lineOffset);
       continue;
     }
 
@@ -400,7 +403,7 @@ function extractJsAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
       const names = bulkExport[1].split(',').map(s => s.trim().split(/[:\s]/)[0].trim());
       for (const name of names) {
         if (name && /^\w+$/.test(name)) {
-          addSymbol(symbols.exports, name, filePath, i + 1);
+          addSymbol(symbols.exports, name, filePath, i + 1 + lineOffset);
         }
       }
     }
@@ -412,7 +415,7 @@ function extractJsAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
       const routePath = routeMatch[2];
       const key = `${method} ${routePath}`;
       if (!symbols.apiRoutes[key]) {
-        symbols.apiRoutes[key] = { file: filePath, line: i + 1, method, path: routePath };
+        symbols.apiRoutes[key] = { file: filePath, line: i + 1 + lineOffset, method, path: routePath };
       }
       continue;
     }
@@ -423,7 +426,7 @@ function extractJsAstSymbols(root, filePath, lang, symbols, lineOffset = 0) {
       const mountPath = mountMatch[1];
       const key = `MOUNT ${mountPath}`;
       if (!symbols.apiRoutes[key]) {
-        symbols.apiRoutes[key] = { file: filePath, line: i + 1, method: 'MOUNT', path: mountPath };
+        symbols.apiRoutes[key] = { file: filePath, line: i + 1 + lineOffset, method: 'MOUNT', path: mountPath };
       }
     }
   }
@@ -700,10 +703,9 @@ function extractHtml(filePath, content, symbols) {
     if (!scriptContent.trim()) continue;
     // Calculate line offset of this script block within the HTML file
     const blockStart = content.substring(0, inlineMatch.index).split('\n').length;
-    try {
-      extractWithAst(filePath, scriptContent, Lang.JavaScript, symbols, blockStart);
-    } catch {
-      // AST parse failed (maybe template syntax) — try regex fallback
+    const parsed = extractWithAst(filePath, scriptContent, Lang.JavaScript, symbols, blockStart);
+    if (!parsed) {
+      // AST parse failed (maybe template syntax) — regex fallback
       const lines = scriptContent.split('\n');
       extractWithRegex(filePath, lines, 'javascript', symbols, blockStart);
     }

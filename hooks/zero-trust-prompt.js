@@ -25,8 +25,13 @@
  *   --minimal    Only emit the core rules (~50 tokens, no watchlist)
  *
  * Exit codes:
- *   0  — Rules injected via stdout (soft context)
- *   2  — Warning injected via stderr (repeat offenders detected, forces attention)
+ *   0  — Rules (and watchlist, if any) injected via stdout as context.
+ *
+ * Note: this hook always exits 0. For UserPromptSubmit hooks, exit code 2
+ * BLOCKS the user's prompt entirely (stderr goes to the user, not the model),
+ * so a non-zero exit would freeze the workflow whenever the watchlist is
+ * non-empty. Watchlist warnings are emitted via stdout instead, which
+ * Claude Code injects into the model's context on exit 0.
  */
 
 import fs from 'fs';
@@ -219,13 +224,11 @@ async function main() {
     lines.push('');
     lines.push(`⚠️ WATCHLIST — previously hallucinated symbols (DO NOT use without verifying):`);
     lines.push(`   ${watchItems}`);
-
-    // Repeat offenders → stderr + exit 2 to force model attention
-    process.stderr.write(lines.join('\n') + '\n');
-    process.exit(2);
   }
 
-  // No repeat offenders → stdout + exit 0 (soft context injection)
+  // Always stdout + exit 0: UserPromptSubmit exit 2 would BLOCK the prompt
+  // (stderr goes to the user, not the model). stdout on exit 0 is injected
+  // into the model's context, which is what we want for the watchlist too.
   process.stdout.write(lines.join('\n') + '\n');
   process.exit(0);
 }

@@ -307,7 +307,10 @@ describe('CLI execution', () => {
     assert.ok(result.stdout.includes('Anti-Hallucination Zero-Trust'));
   });
 
-  it('exits 2 with stderr when watchlist has repeat offenders', () => {
+  it('exits 0 with watchlist on stdout when there are repeat offenders', () => {
+    // UserPromptSubmit hooks must not exit 2: that blocks the user's prompt
+    // (stderr goes to the user, not the model). Watchlist goes to stdout
+    // so it is injected as model context on exit 0.
     const entries = [];
     for (let i = 0; i < 5; i++) {
       entries.push({ symbol: 'ghostFunc', type: 'unknown', timestamp: new Date().toISOString() });
@@ -323,10 +326,10 @@ describe('CLI execution', () => {
       timeout: 10000
     });
 
-    assert.equal(result.status, 2, result.stderr || result.stdout);
-    assert.ok(result.stderr.includes('WATCHLIST'), `Expected WATCHLIST in stderr, got: ${result.stderr}`);
-    assert.ok(result.stderr.includes('ghostFunc'), `Expected ghostFunc in stderr, got: ${result.stderr}`);
-    assert.ok(result.stderr.includes('×5'), `Expected ×5 in stderr, got: ${result.stderr}`);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.ok(result.stdout.includes('WATCHLIST'), `Expected WATCHLIST in stdout, got: ${result.stdout}`);
+    assert.ok(result.stdout.includes('ghostFunc'), `Expected ghostFunc in stdout, got: ${result.stdout}`);
+    assert.ok(result.stdout.includes('×5'), `Expected ×5 in stdout, got: ${result.stdout}`);
   });
 
   it('--dynamic includes registry stats', () => {

@@ -560,22 +560,34 @@ const warnings = [];
 const infos = [];
 const mode = (diffOnly && !isMarkdown) ? ' (in new code)' : '';
 
+// Auto-rewriting files is opt-in: a fuzzy match at >=0.85 confidence can
+// still be wrong (e.g. a brand-new `getUser` rewritten to an existing
+// `getUsers` while the registry is stale), and silently mutating a file the
+// agent just wrote desyncs the agent's view of it. Default: warn so the
+// agent fixes it deliberately. Set ANTIHALL_AUTOFIX=1 to restore rewriting.
+const AUTO_FIX = process.env.ANTIHALL_AUTOFIX === '1';
+
 if (fixedTypos.length > 0) {
   if (isMarkdown) {
     warnings.push(`Symbol typo check: ${fixedTypos.length} possible typo(s) in markdown code fences for ${fileName}:`);
     for (const typo of fixedTypos) {
       warnings.push(`  - ${typo.wrong} → ${typo.right}`);
     }
-  } else {
+  } else if (AUTO_FIX) {
     let newContent = fullOriginalContent;
     for (const typo of fixedTypos) {
       newContent = replaceIdentifierInCode(newContent, typo.wrong, typo.right);
-      infos.push(`[INFO] Detecté el typo '${typo.wrong}', lo auto-corregí a '${typo.right}' por ti en ${fileName}.`);
+      infos.push(`[INFO] Detecté el typo '${typo.wrong}', lo auto-corregí a '${typo.right}' por ti en ${fileName}. Re-lee el archivo antes de editarlo de nuevo.`);
     }
     try {
       fs.writeFileSync(filePath, newContent, 'utf8');
     } catch (e) {
       warnings.push(`No se pudo auto-corregir el archivo: ${e.message}`);
+    }
+  } else {
+    warnings.push(`Symbol typo check: ${fixedTypos.length} probable typo(s) in ${fileName}${mode}:`);
+    for (const typo of fixedTypos) {
+      warnings.push(`  - '${typo.wrong}' is not in the registry — did you mean '${typo.right}'? Fix it or run refresh_symbols if '${typo.wrong}' is new.`);
     }
   }
 }

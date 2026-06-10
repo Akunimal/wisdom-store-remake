@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Typo auto-fix is now opt-in** (`ANTIHALL_AUTOFIX=1`): by default `symbol-check.mjs` reports probable typos as warnings instead of rewriting the file. A fuzzy match at ≥85% confidence can still be wrong (e.g. a brand-new `getUser` rewritten to an existing `getUsers` while the registry is stale), and silently mutating a file the agent just wrote desyncs the agent's view of it.
+
 ### Fixed
+- **`zero-trust-prompt.js` blocked user prompts**: the hook exited 2 when the watchlist had repeat offenders, but for `UserPromptSubmit` hooks exit code 2 **blocks and erases the user's prompt** (stderr goes to the user, not the model). With a non-empty watchlist every single prompt was rejected. The watchlist is now emitted via stdout with exit 0, which Claude Code injects as model context.
+- **HTML inline-script regex fallback was unreachable**: `extractWithAst` swallowed parse failures internally, so the regex fallback in `extractHtml` never ran and scripts with unparseable syntax produced no symbols. `extractWithAst` now reports parse failure so the fallback fires.
+- **Wrong line numbers for CommonJS exports and API routes inside HTML inline scripts**: the regex-based section of `extractJsAstSymbols` ignored `lineOffset`.
 - **`compress_output` hang on interactive/long-running commands**: `exec` now runs with a timeout (new `timeoutMs` parameter, default 120000 ms) and `SIGKILL`. Previously a command that never exited (credential prompt, watch mode, dev server) hung the MCP tool call forever. Timeouts return a clear error with the partial output tail.
 - **`post-command-compress.js` hook hang**: same missing timeout in the hook's `execSync`. Now killed after `RTK_COMMAND_TIMEOUT_MS` (default 120000 ms) with exit code 124 and an explicit timeout message.
 - **Infinite loop in `post-write-symbol-check.sh` on Windows**: `find_project_root` walked up with `while [ "$dir" != "/" ]`, but on Git Bash `dirname "C:/"` returns `C:` (a fixpoint that never equals `/`). Editing any file without a `package.json`/`.wisdom` ancestor froze every Write/Edit until the hook timeout. The loop now stops when `dirname` reaches a fixpoint on any platform.
