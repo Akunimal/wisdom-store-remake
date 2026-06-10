@@ -48,6 +48,13 @@ if (diffOnly && !isMarkdown) {
     const readStdin = () => {
       return new Promise((resolve) => {
         let data = '';
+        // Guard: if stdin never closes (invoked without a pipe), resolve
+        // with whatever arrived instead of hanging forever.
+        const guard = setTimeout(() => {
+          try { process.stdin.destroy(); } catch {}
+          resolve(data);
+        }, 5000);
+        guard.unref?.();
         process.stdin.setEncoding('utf8');
         process.stdin.on('readable', () => {
           let chunk;
@@ -55,8 +62,8 @@ if (diffOnly && !isMarkdown) {
             data += chunk;
           }
         });
-        process.stdin.on('end', () => resolve(data));
-        process.stdin.on('error', () => resolve(''));
+        process.stdin.on('end', () => { clearTimeout(guard); resolve(data); });
+        process.stdin.on('error', () => { clearTimeout(guard); resolve(''); });
       });
     };
     diffContent = await readStdin();

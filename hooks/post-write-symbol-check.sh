@@ -52,14 +52,20 @@ TOOL_NAME=$(json_value 'tool_name')
 
 # Find project root (look for .wisdom dir or package.json)
 find_project_root() {
-  local dir
+  local dir parent
   dir="$(dirname "$FILE_PATH")"
-  while [ "$dir" != "/" ]; do
+  # Stop when dirname reaches a fixpoint: "/" on POSIX, "C:" / "." on
+  # Windows Git Bash (dirname "C:/" is "C:", which never equals "/").
+  while true; do
     if [ -d "$dir/.wisdom" ] || [ -f "$dir/package.json" ]; then
       echo "$dir"
       return
     fi
-    dir="$(dirname "$dir")"
+    parent="$(dirname "$dir")"
+    if [ "$parent" = "$dir" ]; then
+      break
+    fi
+    dir="$parent"
   done
   echo ""
 }

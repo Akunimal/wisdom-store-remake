@@ -37,6 +37,11 @@ export const compressOutputDefinition = {
         type: "boolean",
         description: "Redact API keys, tokens, and passwords from output. Default: true.",
         default: true
+      },
+      timeoutMs: {
+        type: "number",
+        description: "Maximum milliseconds the command may run before being killed. Default: 120000 (2 minutes). Prevents interactive or long-running commands (watch mode, servers, credential prompts) from hanging the tool call forever.",
+        default: 120000
       }
     },
     required: ["command"]
@@ -44,7 +49,7 @@ export const compressOutputDefinition = {
 };
 
 export async function compressOutputHandler(args) {
-  const { command, level = 'normal', maxTokens = 500, redact = true } = args;
+  const { command, level = 'normal', maxTokens = 500, redact = true, timeoutMs = 120000 } = args;
 
   if (!command) {
     throw new Error('Command is required');
@@ -53,7 +58,12 @@ export async function compressOutputHandler(args) {
   try {
     // Execute command. We capture both stdout and stderr.
     // Use a large maxBuffer (50MB) to prevent truncation by Node.js before we can filter it.
-    const { stdout, stderr } = await execAsync(command, { maxBuffer: 1024 * 1024 * 50 });
+    // Timeout prevents interactive/never-ending commands from hanging the MCP call forever.
+    const { stdout, stderr } = await execAsync(command, {
+      maxBuffer: 1024 * 1024 * 50,
+      timeout: timeoutMs,
+      killSignal: 'SIGKILL'
+    });
     
     // Combine stdout and stderr.
     const rawOutput = stdout + (stderr ? '\n' + stderr : '');
@@ -98,6 +108,19 @@ export async function compressOutputHandler(args) {
       ]
     };
   } catch (error) {
+    // Timed out (interactive prompt, watch mode, server, etc.) — report clearly
+    // instead of surfacing a generic kill error. Partial output is included.
+    if (error.killed) {
+      const partial = ((error.stdout || '') + (error.stderr ? '\n' + error.stderr : '')).slice(-4000);
+      return {
+        content: [{
+          type: "text",
+          text: `[RTK-Engine] Command timed out after ${timeoutMs}ms and was killed: ${command}\nLikely interactive or long-running (credential prompt, watch mode, dev server). Increase timeoutMs or run it differently.${partial.trim() ? `\n\nPartial output (tail):\n${partial}` : ''}`
+        }],
+        isError: true
+      };
+    }
+
     // If the command fails, child_process throws an error that contains stdout and stderr.
     // We want to filter failure output too, because compilation/test errors are often huge.
     if (error.stdout || error.stderr) {

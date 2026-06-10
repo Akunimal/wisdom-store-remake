@@ -17,9 +17,19 @@ if (!command) {
   process.exit(1);
 }
 
+// Allow override via env; default 2 minutes so interactive or never-ending
+// commands (credential prompts, watch mode) cannot freeze the hook forever.
+const TIMEOUT_MS = parseInt(process.env.RTK_COMMAND_TIMEOUT_MS, 10) || 120000;
+
 try {
   // Execute the command synchronously
-  const stdout = execSync(command, { encoding: 'utf-8', maxBuffer: 1024 * 1024 * 50, stdio: ['pipe', 'pipe', 'pipe'] });
+  const stdout = execSync(command, {
+    encoding: 'utf-8',
+    maxBuffer: 1024 * 1024 * 50,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: TIMEOUT_MS,
+    killSignal: 'SIGKILL'
+  });
   
   // Compress the output
   const stats = compressOutput(command, stdout);
@@ -31,6 +41,13 @@ try {
   console.error(`\n[RTK-Engine Savings] Tokens: ${stats.originalTokens} → ${stats.compressedTokens} (-${stats.savingsPercent}%) | Filter: ${stats.category}`);
   
 } catch (error) {
+  // Timed out — say so explicitly instead of dumping a generic kill error.
+  // execSync surfaces timeouts as ETIMEDOUT (sometimes with killed/SIGKILL set).
+  if (error.killed || error.code === 'ETIMEDOUT' || error.errno === 'ETIMEDOUT' || error.signal === 'SIGKILL') {
+    console.error(`[RTK-Engine] Command timed out after ${TIMEOUT_MS}ms and was killed: ${command}`);
+    process.exit(124);
+  }
+
   // If the command fails, we still want to compress the error output
   if (error.stdout || error.stderr) {
     const rawOutput = (error.stdout || '') + '\n' + (error.stderr || '');

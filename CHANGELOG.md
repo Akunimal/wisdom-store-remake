@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`compress_output` hang on interactive/long-running commands**: `exec` now runs with a timeout (new `timeoutMs` parameter, default 120000 ms) and `SIGKILL`. Previously a command that never exited (credential prompt, watch mode, dev server) hung the MCP tool call forever. Timeouts return a clear error with the partial output tail.
+- **`post-command-compress.js` hook hang**: same missing timeout in the hook's `execSync`. Now killed after `RTK_COMMAND_TIMEOUT_MS` (default 120000 ms) with exit code 124 and an explicit timeout message.
+- **Infinite loop in `post-write-symbol-check.sh` on Windows**: `find_project_root` walked up with `while [ "$dir" != "/" ]`, but on Git Bash `dirname "C:/"` returns `C:` (a fixpoint that never equals `/`). Editing any file without a `package.json`/`.wisdom` ancestor froze every Write/Edit until the hook timeout. The loop now stops when `dirname` reaches a fixpoint on any platform.
+- **`symbol-check.mjs` stdin hang**: in `--diff-only` mode without a piped stdin, `readStdin` waited for an `end` event that never came. A 5-second guard now resolves with whatever data arrived and closes stdin.
+
 ## [0.9.0] - 2026-06-07
 
 ### Added
