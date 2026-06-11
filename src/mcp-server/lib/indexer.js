@@ -24,18 +24,29 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 
-// Directories to always skip
-const SKIP_DIRS = new Set([
-  // Package managers / tooling
+// Directories that are never source code — cannot be overridden
+const ALWAYS_SKIP = new Set([
   'node_modules', '.git', '.wisdom', '.claude', 'dist', 'build',
   'coverage', '.next', '__pycache__', '.tox', '.venv', 'venv',
-  'vendor', 'target', '.cache', '.turbo', '.github',
+  'vendor', 'target', '.cache', '.turbo',
+]);
+
+// Skipped by default but overridable via includeDirs
+// (.wisdom/config.json or scan options)
+const DEFAULT_SKIP = new Set([
+  '.github',
   // Backups / archive / generated
   'archive', 'backups', 'backup', 'logs', 'tmp',
-  'uploads', 'media', 'data', 'migrations',
+  'uploads', 'media', 'data',
   // Non-code / static content
-  'content', 'Website', 'public', 'static', 'assets',
+  'content', 'public', 'static', 'assets',
 ]);
+
+// Max alternate definition sites tracked per symbol name
+const MAX_LOCATIONS = 5;
+
+// Bump to invalidate existing scan caches when the format changes
+const SCAN_CACHE_VERSION = 1;
 
 // File extensions and their ast-grep language (or 'regex' for fallback)
 const LANG_MAP = {
@@ -58,16 +69,8 @@ const LANG_MAP = {
   '.md': { lang: null, name: 'markdown' },
 };
 
-/**
- * Scan a project directory and extract all symbols.
- */
-export function scanProject(projectRoot, options = {}) {
-  initDynamicLanguages(); // Attempt to load tree-sitter grammars if available
-
-  const maxDepth = options.maxDepth || 8;
-  const maxFiles = options.maxFiles || 2000;
-  const files = [];
-  const symbols = {
+function emptySymbols() {
+  return {
     functions: {},
     classes: {},
     variables: {},
@@ -75,12 +78,71 @@ export function scanProject(projectRoot, options = {}) {
     apiRoutes: {},
     htmlPages: {},
   };
+}
 
-  // Read .gitignore for extra skip dirs
-  const extraSkip = readGitignoreDirs(projectRoot);
+/**
+ * Read optional scan configuration from .wisdom/config.json.
+ * Supported keys: skipDirs (extra dirs to skip), includeDirs (override default skips).
+ */
+function readScanConfig(projectRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(projectRoot, '.wisdom', 'config.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
-  walkDir(projectRoot, projectRoot, files, symbols, 0, maxDepth, maxFiles, extraSkip);
-  return { files, symbols };
+/**
+ * Scan a project directory and extract all symbols.
+ *
+ * Options:
+ * - maxDepth (default 8), maxFiles (default 2000)
+ * - skipDirs / includeDirs: extend or override the default skip list
+ *   (also configurable via .wisdom/config.json)
+ * - incremental (default true): reuse .wisdom/scan-cache.json for files
+ *   whose mtime+size are unchanged since the last scan
+ *
+ * Returns { files, symbols, truncated, cacheHits }.
+ */
+export function scanProject(projectRoot, options = {}) {
+  initDynamicLanguages(); // Attempt to load tree-sitter grammars if available
+
+  const config = readScanConfig(projectRoot);
+  const skip = new Set(DEFAULT_SKIP);
+  for (const d of config.skipDirs || []) skip.add(d);
+  for (const d of options.skipDirs || []) skip.add(d);
+  const include = new Set([...(config.includeDirs || []), ...(options.includeDirs || [])]);
+
+  const incremental = options.incremental !== false;
+  const cache = incremental ? readScanCache(projectRoot) : null;
+
+  const ctx = {
+    projectRoot,
+    maxDepth: options.maxDepth || 8,
+    maxFiles: options.maxFiles || 2000,
+    files: [],
+    symbols: emptySymbols(),
+    skip,
+    include,
+    extraSkip: readGitignoreDirs(projectRoot),
+    cache: cache?.files || {},
+    newCache: { version: SCAN_CACHE_VERSION, files: {} },
+    truncated: false,
+    cacheHits: 0,
+  };
+
+  walkDir(projectRoot, ctx, 0);
+
+  if (incremental) writeScanCache(projectRoot, ctx.newCache);
+
+  return {
+    files: ctx.files,
+    symbols: ctx.symbols,
+    truncated: ctx.truncated,
+    cacheHits: ctx.cacheHits,
+  };
 }
 
 let dynamicLangsRegistered = false;
@@ -133,6 +195,7 @@ function initDynamicLanguages() {
 /**
  * Parse .gitignore for directory entries to skip.
  * Only extracts simple directory patterns (no globs).
+ * Negated entries (`!dir`) remove a previously added skip.
  */
 function readGitignoreDirs(projectRoot) {
   const dirs = new Set();
@@ -142,18 +205,72 @@ function readGitignoreDirs(projectRoot) {
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
+      const negated = trimmed.startsWith('!');
+      const pattern = negated ? trimmed.slice(1) : trimmed;
       // Match directory entries like "Website/" or "GoogleDrive"
-      const dirMatch = trimmed.match(/^([a-zA-Z0-9_-]+)\/?$/);
+      const dirMatch = pattern.match(/^([a-zA-Z0-9_-]+)\/?$/);
       if (dirMatch) {
-        dirs.add(dirMatch[1]);
+        if (negated) dirs.delete(dirMatch[1]);
+        else dirs.add(dirMatch[1]);
       }
     }
   } catch { /* no .gitignore */ }
   return dirs;
 }
 
-function walkDir(dir, projectRoot, files, symbols, depth, maxDepth, maxFiles, extraSkip) {
-  if (depth > maxDepth || files.length >= maxFiles) return;
+function readScanCache(projectRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(projectRoot, '.wisdom', 'scan-cache.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.version === SCAN_CACHE_VERSION && parsed.files) return parsed;
+  } catch { /* no cache or unreadable — full scan */ }
+  return null;
+}
+
+function writeScanCache(projectRoot, cache) {
+  // Only persist if .wisdom/ already exists — a read-only scan
+  // (e.g. get_project_overview) must not create directories.
+  const wisdomDir = path.join(projectRoot, '.wisdom');
+  try {
+    if (!fs.existsSync(wisdomDir)) return;
+    writeJsonAtomic(path.join(wisdomDir, 'scan-cache.json'), cache);
+  } catch { /* cache is best-effort */ }
+}
+
+/**
+ * Merge one file's symbols into the global registry.
+ * Same name in multiple files: first occurrence keeps file/line,
+ * additional files are recorded in a `locations` array (capped).
+ */
+function mergeFileSymbols(globalSymbols, fileSymbols) {
+  for (const cat of ['functions', 'classes', 'variables', 'exports']) {
+    for (const [name, entry] of Object.entries(fileSymbols[cat] || {})) {
+      const existing = globalSymbols[cat][name];
+      if (!existing) {
+        globalSymbols[cat][name] = { ...entry };
+        continue;
+      }
+      existing.usages += entry.usages;
+      if (existing.file !== entry.file) {
+        if (!existing.locations) existing.locations = [{ file: existing.file, line: existing.line }];
+        if (existing.locations.length < MAX_LOCATIONS &&
+            !existing.locations.some(l => l.file === entry.file)) {
+          existing.locations.push({ file: entry.file, line: entry.line });
+        }
+      }
+    }
+  }
+  for (const [key, info] of Object.entries(fileSymbols.apiRoutes || {})) {
+    if (!globalSymbols.apiRoutes[key]) globalSymbols.apiRoutes[key] = info;
+  }
+  for (const [name, info] of Object.entries(fileSymbols.htmlPages || {})) {
+    if (!globalSymbols.htmlPages[name]) globalSymbols.htmlPages[name] = info;
+  }
+}
+
+function walkDir(dir, ctx, depth) {
+  if (depth > ctx.maxDepth) return;
+  if (ctx.files.length >= ctx.maxFiles) return;
 
   let entries;
   try {
@@ -163,25 +280,34 @@ function walkDir(dir, projectRoot, files, symbols, depth, maxDepth, maxFiles, ex
   entries.sort((a, b) => a.name.localeCompare(b.name));
 
   for (const entry of entries) {
-    if (files.length >= maxFiles) break;
-    if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
-    if (SKIP_DIRS.has(entry.name)) continue;
-    if (extraSkip && extraSkip.has(entry.name)) continue;
-    // Skip dirs with spaces (usually backups/copies) or containing 'backup'/'Backup'
-    if (entry.isDirectory() && (entry.name.includes(' ') || /backup/i.test(entry.name))) continue;
+    if (ctx.files.length >= ctx.maxFiles) {
+      ctx.truncated = true;
+      break;
+    }
 
-    const fullPath = path.join(dir, entry.name);
+    const name = entry.name;
+    const fullPath = path.join(dir, name);
 
     if (entry.isDirectory()) {
-      walkDir(fullPath, projectRoot, files, symbols, depth + 1, maxDepth, maxFiles, extraSkip);
+      if (ALWAYS_SKIP.has(name)) continue;
+      if (!ctx.include.has(name)) {
+        if (name.startsWith('.')) continue;
+        if (ctx.skip.has(name)) continue;
+        if (ctx.extraSkip.has(name)) continue;
+        // Skip dirs with spaces (usually backups/copies) or containing 'backup'/'Backup'
+        if (name.includes(' ') || /backup/i.test(name)) continue;
+      }
+      walkDir(fullPath, ctx, depth + 1);
       continue;
     }
 
-    const ext = path.extname(entry.name);
+    if (name.startsWith('.') && name !== '.env.example') continue;
+
+    const ext = path.extname(name);
     const langInfo = LANG_MAP[ext];
     if (!langInfo) continue;
 
-    const relPath = path.relative(projectRoot, fullPath);
+    const relPath = path.relative(ctx.projectRoot, fullPath);
 
     try {
       const stat = fs.statSync(fullPath);
@@ -190,10 +316,26 @@ function walkDir(dir, projectRoot, files, symbols, depth, maxDepth, maxFiles, ex
       const sizeLimit = langInfo.name === 'html' ? 5 * 1024 * 1024 : 500 * 1024;
       if (stat.size > sizeLimit) continue;
 
+      // Incremental: reuse cached symbols when mtime+size unchanged
+      const cached = ctx.cache[relPath];
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        ctx.files.push({
+          path: relPath,
+          lang: cached.lang,
+          lines: cached.lines,
+          size: cached.size,
+          modified: cached.modified
+        });
+        mergeFileSymbols(ctx.symbols, cached.symbols);
+        ctx.newCache.files[relPath] = cached;
+        ctx.cacheHits++;
+        continue;
+      }
+
       const content = fs.readFileSync(fullPath, 'utf8');
       const lines = content.split('\n');
 
-      files.push({
+      ctx.files.push({
         path: relPath,
         lang: langInfo.name,
         lines: lines.length,
@@ -201,13 +343,24 @@ function walkDir(dir, projectRoot, files, symbols, depth, maxDepth, maxFiles, ex
         modified: stat.mtime.toISOString().split('T')[0]
       });
 
+      const fileSymbols = emptySymbols();
       if (langInfo.name === 'html') {
-        extractHtml(relPath, content, symbols);
+        extractHtml(relPath, content, fileSymbols);
       } else if (langInfo.lang) {
-        extractWithAst(relPath, content, langInfo.lang, symbols);
+        extractWithAst(relPath, content, langInfo.lang, fileSymbols);
       } else {
-        extractWithRegex(relPath, lines, langInfo.name, symbols);
+        extractWithRegex(relPath, lines, langInfo.name, fileSymbols);
       }
+      mergeFileSymbols(ctx.symbols, fileSymbols);
+
+      ctx.newCache.files[relPath] = {
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        lang: langInfo.name,
+        lines: lines.length,
+        modified: stat.mtime.toISOString().split('T')[0],
+        symbols: fileSymbols
+      };
     } catch { /* skip unreadable/unparseable files */ }
   }
 }
@@ -637,8 +790,6 @@ function extractBash(filePath, lines, symbols) {
 }
 
 function extractSql(filePath, lines, symbols) {
-  let currentTable = null;
-
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     const lineNum = i + 1;
@@ -646,8 +797,7 @@ function extractSql(filePath, lines, symbols) {
     // CREATE TABLE statements
     const createTable = line.match(/CREATE\s+(?:OR\s+REPLACE\s+)?(?:TABLE|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s*\(/i);
     if (createTable) {
-      currentTable = createTable[1];
-      addSymbol(symbols.classes, currentTable, filePath, lineNum);
+      addSymbol(symbols.classes, createTable[1], filePath, lineNum);
       continue;
     }
 
@@ -900,7 +1050,7 @@ export function checkSymbols(symbolNames, registry) {
         for (const [catName, cat] of Object.entries(registry)) {
           if (cat[match.name]) {
             // Confidence: 0.3 base + up to 0.4 based on distance quality
-            const maxDistance = Math.max(2, Math.floor(name.length * 0.3));
+            const maxDistance = fuzzyMaxDistance(name.length);
             const distanceRatio = 1 - (match.distance / maxDistance);
             const confidence = Math.round((0.3 + 0.4 * distanceRatio) * 100) / 100;
             fuzzy.push({
@@ -933,10 +1083,22 @@ export function checkSymbols(symbolNames, registry) {
   return { known, fuzzy, unknown, overallConfidence };
 }
 
+/**
+ * Edit-distance tolerance scaled to symbol length.
+ * Short identifiers get strict (or no) fuzzy matching — with distance 2,
+ * a 3-char query would match almost anything.
+ */
+function fuzzyMaxDistance(len) {
+  if (len < 3) return 0; // too short — fuzzy matching is pure noise
+  if (len < 5) return 1;
+  return Math.max(2, Math.floor(len * 0.3));
+}
+
 function findFuzzyMatch(query, names) {
   let bestMatch = null;
   let bestDistance = Infinity;
-  const maxDistance = Math.max(2, Math.floor(query.length * 0.3));
+  const maxDistance = fuzzyMaxDistance(query.length);
+  if (maxDistance === 0) return null;
 
   for (const name of names) {
     if (Math.abs(name.length - query.length) > maxDistance) continue;
@@ -950,29 +1112,28 @@ function findFuzzyMatch(query, names) {
   return bestMatch ? { name: bestMatch, distance: bestDistance } : null;
 }
 
+// Two-row Levenshtein: O(min) memory instead of a full matrix
 function levenshtein(a, b) {
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
 
-  const matrix = [];
-  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  let prev = new Array(a.length + 1);
+  let curr = new Array(a.length + 1);
+  for (let j = 0; j <= a.length; j++) prev[j] = j;
 
   for (let i = 1; i <= b.length; i++) {
+    curr[0] = i;
     for (let j = 1; j <= a.length; j++) {
       if (b[i - 1] === a[j - 1]) {
-        matrix[i][j] = matrix[i - 1][j - 1];
+        curr[j] = prev[j - 1];
       } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
+        curr[j] = Math.min(prev[j - 1], curr[j - 1], prev[j]) + 1;
       }
     }
+    [prev, curr] = [curr, prev];
   }
 
-  return matrix[b.length][a.length];
+  return prev[a.length];
 }
 
 export function readSymbols(wisdomDir) {
@@ -985,7 +1146,21 @@ export function readSymbols(wisdomDir) {
   }
 }
 
+/**
+ * Atomic JSON write: write to a temp file, then rename over the target.
+ * Prevents a half-written file if the process dies mid-write.
+ */
+function writeJsonAtomic(filePath, data) {
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2) + '\n');
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
+    throw err;
+  }
+}
+
 export function writeSymbols(wisdomDir, symbols) {
-  const symbolsPath = path.join(wisdomDir, 'symbols.json');
-  fs.writeFileSync(symbolsPath, JSON.stringify(symbols, null, 2) + '\n');
+  writeJsonAtomic(path.join(wisdomDir, 'symbols.json'), symbols);
 }

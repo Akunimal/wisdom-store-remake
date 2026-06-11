@@ -104,6 +104,10 @@ const TOOLS = [
         max_files: {
           type: 'integer',
           description: 'Maximum number of files to scan. Default: 2000.'
+        },
+        force: {
+          type: 'boolean',
+          description: 'If true, bypass the incremental scan cache and reparse every file. Default: false.'
         }
       }
     }
@@ -173,6 +177,10 @@ const TOOLS = [
         max_files: {
           type: 'integer',
           description: 'Maximum number of files to scan. Default: 2000.'
+        },
+        force: {
+          type: 'boolean',
+          description: 'If true, bypass the incremental scan cache and reparse every file. Default: false.'
         }
       }
     }

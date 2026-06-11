@@ -68,7 +68,8 @@ export async function handleCheckSymbols(args) {
       const usageNote = f.usages > 5 ? ' (well-established)' : f.usages === 1 ? ' (rarely used)' : '';
       const confidenceStr = ` (${Math.round(f.confidence * 100)}% confidence)`;
       const repeatNote = watchlist.has(f.queried) ? ` ⚠️ [REPEAT ×${watchlist.get(f.queried)}]` : '';
-      lines.push(`- **${f.queried}** → did you mean **${f.suggestion}**?${confidenceStr} (${f.category}, ${f.file}:${f.line})${usageNote}${repeatNote}`);
+      const multiNote = f.locations && f.locations.length > 1 ? ` [defined in ${f.locations.length} files]` : '';
+      lines.push(`- **${f.queried}** → did you mean **${f.suggestion}**?${confidenceStr} (${f.category}, ${f.file}:${f.line}${multiNote})${usageNote}${repeatNote}`);
     }
     lines.push('');
   }
@@ -101,7 +102,8 @@ export async function handleCheckSymbols(args) {
     lines.push(`### Known Symbols (${result.known.length})`);
     for (const k of result.known) {
       const established = k.established ? ' ✅' : '';
-      lines.push(`- ${k.name} — ${k.category}, ${k.file}:${k.line}${established}`);
+      const multiNote = k.locations && k.locations.length > 1 ? ` [+${k.locations.length - 1} more]` : '';
+      lines.push(`- ${k.name} — ${k.category}, ${k.file}:${k.line}${multiNote}${established}`);
     }
   }
 

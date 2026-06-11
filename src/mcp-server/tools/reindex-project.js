@@ -26,7 +26,9 @@ export async function handleReindexProject(args) {
 
   const options = {
     maxDepth: args.max_depth || 8,
-    maxFiles: args.max_files || 2000
+    maxFiles: args.max_files || 2000,
+    // force: true bypasses the incremental scan cache and reparses everything
+    incremental: args.force !== true
   };
 
   const result = scanProject(projectRoot, options);
@@ -61,8 +63,9 @@ export async function handleReindexProject(args) {
   const exportCount = Object.keys(result.symbols.exports).length;
   const varCount = Object.keys(result.symbols.variables).length;
 
+  const cacheNote = result.cacheHits > 0 ? ` (${result.cacheHits} unchanged, from cache)` : '';
   const summary = [
-    `Indexed ${result.files.length} files in ${elapsed}ms`,
+    `Indexed ${result.files.length} files in ${elapsed}ms${cacheNote}`,
     ``,
     `### Symbols Found`,
     `- Functions: ${funcCount}`,
@@ -80,6 +83,11 @@ export async function handleReindexProject(args) {
   }
   for (const [lang, count] of Object.entries(langCounts).sort()) {
     summary.push(`- ${lang}: ${count} files`);
+  }
+
+  if (result.truncated) {
+    summary.push('');
+    summary.push(`⚠️ File limit reached (${options.maxFiles}) — scan truncated. Registry is incomplete; raise max_files to index everything.`);
   }
 
   summary.push('');
