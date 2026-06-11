@@ -79,7 +79,7 @@ describe('findProjectRoot', () => {
   it('returns null when no project root found', () => {
     // Use a bare temp dir with no markers
     const bareDir = makeTmpDir();
-    const result = findProjectRoot(bareDir);
+    findProjectRoot(bareDir);
     // Could be null or could find a parent — depends on system
     // The important thing is it doesn't crash
     rmrf(bareDir);

@@ -20,7 +20,7 @@ const SECRETS_PATTERNS = [
   // OpenAI API keys (sk-proj-..., sk-...)
   { name: 'OPENAI_KEY', pattern: /\bsk-(?:proj-)?[a-zA-Z0-9]{20,}/g },
   // Anthropic API keys
-  { name: 'ANTHROPIC_KEY', pattern: /\bsk-ant-[a-zA-Z0-9\-]{20,}/g },
+  { name: 'ANTHROPIC_KEY', pattern: /\bsk-ant-[a-zA-Z0-9-]{20,}/g },
   // GitHub tokens (classic PAT, fine-grained, OAuth, app)
   { name: 'GITHUB_TOKEN', pattern: /\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{20,}/g },
   // AWS Access Keys (always start with AKIA)
@@ -46,7 +46,7 @@ const SECRETS_PATTERNS = [
   // npm tokens
   { name: 'NPM_TOKEN', pattern: /\bnpm_[a-zA-Z0-9]{36}/g },
   // Slack tokens
-  { name: 'SLACK_TOKEN', pattern: /\bxox[bpras]-[a-zA-Z0-9\-]{10,}/g },
+  { name: 'SLACK_TOKEN', pattern: /\bxox[bpras]-[a-zA-Z0-9-]{10,}/g },
   // Discord tokens
   { name: 'DISCORD_TOKEN', pattern: /\b[MN][a-zA-Z0-9]{23,}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{27,}/g },
 ];

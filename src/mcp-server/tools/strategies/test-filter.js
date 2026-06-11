@@ -16,7 +16,6 @@ export function filterTestOutput(output) {
 
   const failures = [];
   const errors = [];
-  let summary = null;
   let totalTests = 0;
   let passedTests = 0;
   let failedTests = 0;
@@ -168,6 +167,6 @@ export function filterTestOutput(output) {
 /**
  * Route test command output to filter.
  */
-export function filterTest(output, args) {
+export function filterTest(output, _args) {
   return filterTestOutput(output);
 }

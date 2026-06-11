@@ -74,6 +74,6 @@ export function filterLogOutput(output) {
   return { compressed, savings: Math.max(0, savings) };
 }
 
-export function filterLog(output, args) {
+export function filterLog(output, _args) {
   return filterLogOutput(output);
 }

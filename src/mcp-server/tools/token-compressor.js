@@ -88,7 +88,7 @@ function detectCommandCategory(commandStr) {
  * Routes raw output to the appropriate strategy based on the command.
  */
 export function compressOutput(command, rawOutput, options = {}) {
-  const { maxTokens = 500, level = 'normal', redact = true } = options;
+  const { maxTokens = 500, redact = true } = options;
   const { category, base, args } = detectCommandCategory(command);
   
   // Step 1: Strip ANSI to make parsing easier and save tokens immediately

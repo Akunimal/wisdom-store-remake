@@ -12,7 +12,8 @@
   "scripts": {
     "start": "node src/mcp-server/index.js",
     "inspector": "npx @modelcontextprotocol/inspector node src/mcp-server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "keywords": [
     "mcp",
@@ -56,5 +57,9 @@
     "tree-sitter-go": "^0.23.0",
     "tree-sitter-rust": "^0.24.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0"
+  }
 }

@@ -84,6 +84,6 @@ export function filterJsonOutput(output) {
   }
 }
 
-export function filterJson(output, args) {
+export function filterJson(output, _args) {
   return filterJsonOutput(output);
 }

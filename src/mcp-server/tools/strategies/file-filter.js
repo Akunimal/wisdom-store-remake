@@ -77,10 +77,6 @@ export function filterTreeOutput(output) {
   const lines = output.split('\n').filter(l => l.trim());
   if (!lines.length) return { compressed: 'empty tree', savings: 100 };
 
-  // Count total dirs and files from the summary line
-  const summaryLine = lines[lines.length - 1];
-  const summaryMatch = summaryLine.match(/(\d+)\s*director(?:ies|y).*?(\d+)\s*files?/i);
-
   // Keep only first 3 levels of depth
   const maxDepth = 3;
   const filtered = [];

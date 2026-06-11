@@ -14,7 +14,6 @@ export function filterLintOutput(output) {
   if (!lines.length) return { compressed: 'no errors', savings: 100 };
 
   const errorsByRule = new Map();
-  const errorsByFile = new Map();
   let totalErrors = 0;
   let totalWarnings = 0;
 
@@ -118,6 +117,6 @@ export function filterLintOutput(output) {
 /**
  * Route lint command output to filter.
  */
-export function filterLint(output, args) {
+export function filterLint(output, _args) {
   return filterLintOutput(output);
 }

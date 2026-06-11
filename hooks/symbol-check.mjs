@@ -436,7 +436,7 @@ function getNamespace(fPath) {
   return 'root';
 }
 
-const currentNamespace = getNamespace(path.relative(path.dirname(symbolsFile), filePath).replace(/^\.\.[\/\\]/, ''));
+const currentNamespace = getNamespace(path.relative(path.dirname(symbolsFile), filePath).replace(/^\.\.[/\\]/, ''));
 const unknowns = [];
 const fixedTypos = [];
 const namespaceViolations = [];

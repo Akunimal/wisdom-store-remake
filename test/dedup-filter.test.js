@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { deduplicateLines, groupSimilarLines } from '../src/mcp-server/tools/strategies/dedup-filter.js';
 

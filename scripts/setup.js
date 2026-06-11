@@ -454,7 +454,6 @@ function logRepoMcpCleanup(removals) {
 // 1. Detect Environment
 logStep('Detecting environment...');
 const os = platform();
-const isWindows = os === 'win32';
 log(`OS: ${os}`);
 log(`Target project: ${PROJECT_ROOT}`);
 

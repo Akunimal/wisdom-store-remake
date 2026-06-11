@@ -117,13 +117,11 @@ export function filterGitLog(output) {
     if (commitMatch) {
       const hash = commitMatch[1].substring(0, 7);
       let message = '';
-      let author = '';
-      let date = '';
       i++;
       while (i < lines.length && !lines[i].match(/^commit\s+[a-f0-9]+/)) {
         const line = lines[i].trim();
-        if (line.startsWith('Author:')) author = line.replace('Author:', '').trim().split('<')[0].trim();
-        else if (line.startsWith('Date:')) date = line.replace('Date:', '').trim();
+        // Author/Date lines are dropped — only hash + message survive compression
+        if (line.startsWith('Author:') || line.startsWith('Date:')) { /* skip */ }
         else if (line && !message) message = line;
         i++;
       }
