@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2026-06-11
+
+Flow-and-bug audit across the MCP server, compression strategies, hooks, and the installer.
+
+### Fixed
+- **Installer registered the MCP server in the wrong file** (`scripts/setup.js`): Claude Code reads MCP servers from `~/.claude.json` (user scope), not `~/.claude/settings.json`. Setup wrote `mcpServers` into `settings.json`, where Claude Code ignores it — so the server never connected for Claude Code users. MCP registration now targets `~/.claude.json` (preserving all existing keys); hooks still go in `settings.json`. README install instructions corrected (EN + ES) to point at `~/.claude.json` / `.mcp.json` / `claude mcp add`.
+- **Hook command path mangled on Windows** (`scripts/setup.js`): the PostToolUse hook command was written with backslashes (`C:\…\post-write-symbol-check.sh`). The shell consuming it treats backslashes as escapes, collapsing the path so the hook silently never ran. Paths are now normalized to forward slashes.
+- **`check_symbols` matched against API routes and HTML pages** (`indexer.js`): the registry's `apiRoutes` keys (`"GET /api/x"`) and `htmlPages` keys (filenames) were folded into the symbol name set, so a queried symbol could be falsely confirmed or fuzzy-matched against a route. Matching is now restricted to `functions`/`classes`/`variables`/`exports`.
+- **Compression post-processors corrupted git diffs** (`token-compressor.js`): the universal line-dedup and similar-line-grouping passes ran on `git diff` output too, collapsing three consecutive `+}` lines into `+} [×3]` and reordering grouped lines — producing a diff the agent could not apply. Both passes are now skipped for the `git` category, which the git filter already keeps near-lossless.
+- **`pwd` redacted as a password** (`secret-redactor.js`): the `PASSWORD` pattern matched `pwd` (the shell builtin and `pwd=/path` diagnostics, including `detect_environment` output), redacting real paths. `pwd` is removed from the pattern (`password`/`passwd` retained).
+- **Compress hook dropped stderr on success** (`post-command-compress.js`): `execSync` returns only stdout, silently discarding warnings/deprecations that tools (tsc, eslint, git, npm) print to stderr while exiting 0. Rewritten on `spawnSync` to capture stdout + stderr in both success and failure paths.
+- **Hook regexes broke on `$` identifiers** (`symbol-check.mjs`): symbol names were interpolated into `RegExp` unescaped, so identifiers containing regex metacharacters (`$http`, `foo$`) acted as anchors/quantifiers and produced false "unknown" reports. Names are now escaped before interpolation.
+- **ESLint default (stylish) output was not parsed** (`lint-filter.js`): the lint filter only understood the `unix` formatter; stylish output (file header + indented `line:col severity message rule` rows) fell through to a raw 15-line truncation, losing errors. A stylish parser was added that groups by rule and attributes file counts.
+
+### Changed
+- **Hallucination events are recorded in a single read+write** (`hallucination-tracker.js`, `check-symbols.js`): `check_symbols` previously called `recordHallucination` per flagged symbol, re-reading and re-writing the JSON file N times per check (and racing the atomic-rename temp file). A new `recordHallucinations` batch writes once. The per-event `file` field — which `check_symbols` was filling with the project root, mislabeling the report's "Files" column — is left blank, since `check_symbols` is not file-scoped.
+- **`npm run test`, `yarn test`, and `pnpm test` are recognized as test commands** (`token-compressor.js`): previously only `npm test` mapped to the test filter; the others fell back to generic compression.
+- **`compress_output` `maxTokens` description corrected** (`compress-output.js`): it is a soft cap on generic/unknown output, not a hard truncation of domain-filtered output (git diff, tests, lint), which self-truncate with domain knowledge.
+- **Empty JSON arrays render as `[] (empty array)`** (`json-filter.js`) instead of `[0 items] first: undefined`.
+
 ## [0.10.2] - 2026-06-11
 
 ### Fixed

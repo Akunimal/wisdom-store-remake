@@ -24,7 +24,7 @@ import {
 } from '../lib/indexer.js';
 
 import {
-  recordHallucination,
+  recordHallucinations,
   getWatchlist
 } from '../lib/hallucination-tracker.js';
 
@@ -124,14 +124,16 @@ export async function handleCheckSymbols(args) {
     }
   }
 
-  // Record hallucinations for cross-session tracking (non-blocking)
+  // Record hallucinations for cross-session tracking (non-blocking).
+  // check_symbols is not file-scoped (it checks a list of names), so there is
+  // no per-symbol file to record — leave it blank rather than mislabeling the
+  // event with the project root, which then shows up in the report's "Files".
   try {
-    for (const f of result.fuzzy) {
-      recordHallucination(wisdomDir, f.queried, args.project_path || '', 'fuzzy');
-    }
-    for (const u of result.unknown) {
-      recordHallucination(wisdomDir, u.name, args.project_path || '', 'unknown');
-    }
+    const events = [
+      ...result.fuzzy.map((f) => ({ symbol: f.queried, type: 'fuzzy' })),
+      ...result.unknown.map((u) => ({ symbol: u.name, type: 'unknown' }))
+    ];
+    recordHallucinations(wisdomDir, events);
   } catch {
     // Tracking is non-critical — never fail the check due to tracking errors
   }

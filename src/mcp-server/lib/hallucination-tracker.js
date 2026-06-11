@@ -60,6 +60,52 @@ export function recordHallucination(wisdomDir, symbol, filePath, type) {
 }
 
 /**
+ * Record multiple hallucination events in a single read+write.
+ * check_symbols flags a whole batch at once; calling recordHallucination per
+ * symbol re-reads and re-writes the JSON file N times (and racy under the
+ * atomic-rename temp file). This reads once, appends all, and writes once.
+ * @param {string} wisdomDir - Path to .wisdom/ directory
+ * @param {Array<{symbol: string, type: string, file?: string}>} events
+ */
+export function recordHallucinations(wisdomDir, events) {
+  if (!Array.isArray(events) || events.length === 0) return;
+
+  const logPath = path.join(wisdomDir, HALLUCINATIONS_FILE);
+
+  let entries = [];
+  try {
+    if (fs.existsSync(logPath)) {
+      entries = JSON.parse(fs.readFileSync(logPath, 'utf8'));
+      if (!Array.isArray(entries)) entries = [];
+    }
+  } catch {
+    entries = [];
+  }
+
+  const timestamp = new Date().toISOString();
+  for (const e of events) {
+    entries.push({
+      symbol: e.symbol,
+      file: e.file || '',
+      type: e.type,
+      timestamp,
+      session: process.pid
+    });
+  }
+
+  if (entries.length > MAX_ENTRIES) {
+    entries = entries.slice(entries.length - MAX_ENTRIES);
+  }
+
+  try {
+    fs.mkdirSync(wisdomDir, { recursive: true });
+    writeJsonAtomic(logPath, entries);
+  } catch {
+    // Fail silently — tracking is non-critical
+  }
+}
+
+/**
  * Analyze hallucination patterns from the log.
  * @param {string} wisdomDir - Path to .wisdom/ directory
  * @returns {{ frequent: Array, recent: Array, byType: Object, total: number }}

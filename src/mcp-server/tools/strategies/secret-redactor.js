@@ -41,8 +41,10 @@ const SECRETS_PATTERNS = [
   { name: 'CONNECTION_STRING', pattern: /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis(?:s)?):\/\/[^\s'"`,)}\]]+/gi },
   // Generic key=value patterns for common env vars
   { name: 'SECRET_VALUE', pattern: /(?:API_KEY|API_SECRET|SECRET_KEY|ACCESS_TOKEN|AUTH_TOKEN|PRIVATE_KEY|DB_PASSWORD|DATABASE_URL|REDIS_URL)\s*[=:]\s*[^\s'"`,)}\]]{8,}/gi },
-  // password= patterns (key=value in URLs, configs, or env files)
-  { name: 'PASSWORD', pattern: /(?:password|passwd|pwd)\s*[=:]\s*[^\s'"`,)}\]]{4,}/gi },
+  // password= patterns (key=value in URLs, configs, or env files).
+  // `pwd` is intentionally excluded: it collides with the `pwd` shell builtin
+  // and `pwd=/path` diagnostics (e.g. detect_environment), redacting paths.
+  { name: 'PASSWORD', pattern: /(?:password|passwd)\s*[=:]\s*[^\s'"`,)}\]]{4,}/gi },
   // npm tokens
   { name: 'NPM_TOKEN', pattern: /\bnpm_[a-zA-Z0-9]{36}/g },
   // Slack tokens

@@ -1058,8 +1058,17 @@ export function checkSymbols(symbolNames, registry) {
   const fuzzy = [];
   const unknown = [];
 
+  // Only these categories hold real code identifiers. apiRoutes keys are
+  // "GET /path" strings and htmlPages keys are filenames — matching a queried
+  // symbol against them produces bogus "known"/fuzzy results.
+  const SYMBOL_CATEGORIES = ['functions', 'classes', 'variables', 'exports'];
+  const symbolRegistry = {};
+  for (const cat of SYMBOL_CATEGORIES) {
+    if (registry[cat] && typeof registry[cat] === 'object') symbolRegistry[cat] = registry[cat];
+  }
+
   const allNames = new Set();
-  for (const category of Object.values(registry)) {
+  for (const category of Object.values(symbolRegistry)) {
     for (const name of Object.keys(category)) {
       allNames.add(name);
     }
@@ -1067,7 +1076,7 @@ export function checkSymbols(symbolNames, registry) {
 
   for (const name of symbolNames) {
     if (allNames.has(name)) {
-      for (const [catName, cat] of Object.entries(registry)) {
+      for (const [catName, cat] of Object.entries(symbolRegistry)) {
         if (cat[name]) {
           const established = (cat[name].usages || 0) >= 5;
           known.push({
@@ -1083,7 +1092,7 @@ export function checkSymbols(symbolNames, registry) {
     } else {
       const match = findFuzzyMatch(name, allNames);
       if (match) {
-        for (const [catName, cat] of Object.entries(registry)) {
+        for (const [catName, cat] of Object.entries(symbolRegistry)) {
           if (cat[match.name]) {
             // Confidence: 0.3 base + up to 0.4 based on distance quality
             const maxDistance = fuzzyMaxDistance(name.length);

@@ -22,6 +22,10 @@ const cliOptions = parseSetupArgs(process.argv.slice(2));
 const PROJECT_ROOT = resolve(cliOptions.project || process.cwd());
 const homeDir = process.env.HOME || process.env.USERPROFILE || '';
 const SETTINGS_PATH = join(homeDir, '.claude', 'settings.json');
+// Claude Code reads MCP servers from ~/.claude.json (user scope), NOT
+// settings.json (which only holds hooks/permissions/env/etc.). Equivalent to
+// `claude mcp add -s user`.
+const CLAUDE_JSON_PATH = join(homeDir, '.claude.json');
 const CODEX_CONFIG_PATH = join(homeDir, '.codex', 'config.toml');
 const ANTIGRAVITY_CONFIG_PATH = join(homeDir, '.gemini', 'antigravity-ide', 'mcp_config.json');
 const PROJECT_SETTINGS_PATH = join(PROJECT_ROOT, '.claude', 'settings.json');
@@ -485,6 +489,10 @@ if (existsSync(SETTINGS_PATH)) {
   }
 }
 
+// Load ~/.claude.json (user-scope MCP registry) separately, preserving all
+// existing keys (OAuth session, per-project state, caches).
+let claudeJson = readJsonConfig(CLAUDE_JSON_PATH, '~/.claude.json');
+
 let codexConfig = '';
 if (existsSync(CODEX_CONFIG_PATH)) {
   codexConfig = readFileSync(CODEX_CONFIG_PATH, 'utf-8');
@@ -501,7 +509,7 @@ let globalAntigravityConfig = readJsonConfig(ANTIGRAVITY_CONFIG_PATH, 'global mc
 const mcpName = 'wisdom-store';
 const mcpServerPath = join(ROOT_DIR, 'src', 'mcp-server', 'index.js');
 let configuredMcpServers = collectMcpServers({
-  globalClaude: settings,
+  globalClaude: claudeJson,
   globalAntigravity: globalAntigravityConfig,
   projectClaude: projectClaudeSettings,
   projectMcpJson,
@@ -523,7 +531,7 @@ projectClaudeSettings = cleanup.configs.projectClaude;
 projectMcpJson = cleanup.configs.projectMcpJson;
 projectCodexConfig = cleanup.configs.projectCodex;
 configuredMcpServers = collectMcpServers({
-  globalClaude: settings,
+  globalClaude: claudeJson,
   projectClaude: projectClaudeSettings,
   projectMcpJson,
   globalCodex: codexConfig,
@@ -539,23 +547,26 @@ const mcpConfig = {
     : {}
 };
 
-// Prepare Hooks
+// Prepare Hooks. Normalize to forward slashes: the hook command string is
+// consumed by a shell (bash on Windows too), where backslashes are escape
+// characters — `C:\Extension\hooks\x.sh` collapses to `C:Extensionhooksx.sh`
+// and the hook silently never runs.
 const hooksDir = join(ROOT_DIR, 'hooks');
-const postWriteHook = join(hooksDir, 'post-write-symbol-check.sh');
+const postWriteHook = join(hooksDir, 'post-write-symbol-check.sh').replace(/\\/g, '/');
 
 if (!existsSync(postWriteHook)) {
   logError(`Hook not found: ${postWriteHook}`);
   process.exit(1);
 }
 
-// Update settings object
-if (!settings.mcpServers) settings.mcpServers = {};
+// MCP server lives in ~/.claude.json; hooks live in ~/.claude/settings.json.
+if (!claudeJson.mcpServers) claudeJson.mcpServers = {};
 if (!settings.hooks) settings.hooks = {};
 
 // Check if already configured
-const isMcpConfigured = settings.mcpServers[mcpName]?.command === 'node' && 
-                        settings.mcpServers[mcpName].args?.some(arg => arg.includes('index.js')) &&
-                        (settings.mcpServers[mcpName].env?.WISDOM_STORE_DISABLED_TOOLS || '') === (mcpConfig.env.WISDOM_STORE_DISABLED_TOOLS || '');
+const isMcpConfigured = claudeJson.mcpServers[mcpName]?.command === 'node' &&
+                        claudeJson.mcpServers[mcpName].args?.some(arg => arg.includes('index.js')) &&
+                        (claudeJson.mcpServers[mcpName].env?.WISDOM_STORE_DISABLED_TOOLS || '') === (mcpConfig.env.WISDOM_STORE_DISABLED_TOOLS || '');
 const existingPostToolUseHooks = normalizeHookEntries(settings.hooks.PostToolUse);
 const isHookConfigured = hasStructuredPostWriteHooks(existingPostToolUseHooks, postWriteHook);
 const hasLegacyHookEntries = existingPostToolUseHooks.some(
@@ -563,12 +574,24 @@ const hasLegacyHookEntries = existingPostToolUseHooks.some(
     !isStructuredPostWriteHookEntry(entry, postWriteHook)
 );
 
-if (isMcpConfigured && isHookConfigured && !hasLegacyHookEntries) {
-  logSuccess('wisdom-store already configured in settings.json!');
+// 1. MCP server registration → ~/.claude.json (user scope)
+if (isMcpConfigured) {
+  logSuccess('wisdom-store MCP server already configured in ~/.claude.json!');
 } else {
-  // Merge configs
-  settings.mcpServers[mcpName] = mcpConfig;
-  
+  claudeJson.mcpServers[mcpName] = mcpConfig;
+  try {
+    writeConfigFile(CLAUDE_JSON_PATH, JSON.stringify(claudeJson, null, 2) + '\n', '~/.claude.json');
+    logSuccess('~/.claude.json updated with wisdom-store MCP server');
+  } catch (e) {
+    logError(`Failed to write ~/.claude.json: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+// 2. Hook registration → ~/.claude/settings.json
+if (isHookConfigured && !hasLegacyHookEntries) {
+  logSuccess('PostToolUse hook already configured in settings.json!');
+} else {
   // Handle PostToolUse hook (append structured entries and replace legacy string entries)
   if (isHookConfigured) {
     settings.hooks.PostToolUse = existingPostToolUseHooks.filter(
@@ -582,7 +605,6 @@ if (isMcpConfigured && isHookConfigured && !hasLegacyHookEntries) {
     settings.hooks.PostToolUse.push(...makePostWriteHookEntries(postWriteHook));
   }
 
-  // Write back
   try {
     writeConfigFile(SETTINGS_PATH, JSON.stringify(settings, null, 2) + '\n', '~/.claude/settings.json');
     logSuccess('settings.json updated successfully');
@@ -674,7 +696,8 @@ log('\nNext steps:', 'bold');
 log('1. Restart your terminal, Claude Code, or Antigravity IDE session.');
 log('2. In Claude Code, Codex, or Antigravity IDE, type: "Reindex this project"');
 log('3. Claude Code PostToolUse hook is configured; Codex hook wiring is manual/runtime-specific.');
-log('\nConfiguration file: ' + SETTINGS_PATH);
+log('\nClaude MCP registry (~/.claude.json): ' + CLAUDE_JSON_PATH);
+log('Claude hooks file: ' + SETTINGS_PATH);
 log('Codex config file: ' + CODEX_CONFIG_PATH);
 log('Antigravity config file: ' + ANTIGRAVITY_CONFIG_PATH);
 log('MCP Server: ' + mcpName);

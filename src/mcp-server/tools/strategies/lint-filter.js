@@ -16,9 +16,31 @@ export function filterLintOutput(output) {
   const errorsByRule = new Map();
   let totalErrors = 0;
   let totalWarnings = 0;
+  // ESLint's default "stylish" formatter prints the file path on its own line,
+  // then indented "line:col  severity  message  rule" rows beneath it.
+  let currentFile = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
+
+    // ESLint stylish row: "12:5  error  'x' is not defined  no-undef"
+    const eslintStylish = trimmed.match(/^(\d+):(\d+)\s+(error|warning)\s+(.+?)\s+([@a-zA-Z][\w/-]*)$/);
+    if (eslintStylish) {
+      const [, , , severity, message, rule] = eslintStylish;
+      const key = `${rule}: ${message}`;
+      if (!errorsByRule.has(key)) errorsByRule.set(key, { count: 0, files: new Set() });
+      errorsByRule.get(key).count++;
+      if (currentFile) errorsByRule.get(key).files.add(currentFile);
+      if (severity === 'error') totalErrors++;
+      else totalWarnings++;
+      continue;
+    }
+
+    // Stylish file header: a bare path line (no spaces) ending in an extension.
+    if (/[\\/].*\.\w+$/.test(trimmed) && !trimmed.includes(' ')) {
+      currentFile = trimmed;
+      continue;
+    }
 
     // TSC format: file.ts(line,col): error TS2345: message
     const tscMatch = trimmed.match(/^(.+?)\((\d+),(\d+)\):\s*(error|warning)\s+(TS\d+):\s*(.+)/);

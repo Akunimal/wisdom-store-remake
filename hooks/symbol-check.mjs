@@ -454,6 +454,12 @@ function getLevenshteinDistance(a, b) {
   return matrix[a.length][b.length];
 }
 
+// Escape regex metacharacters so identifiers containing $, etc. ($http, foo$)
+// don't act as anchors/quantifiers when interpolated into a RegExp below.
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Namespace helper
 function getNamespace(fPath) {
   const parts = fPath.split(/[/\\]/);
@@ -488,11 +494,12 @@ for (const name of referenced) {
   if (importedBindings.has(name)) continue;
 
   // Is it a local definition in this file? (check full file, not just diff)
-  const localDef = new RegExp(`(?:function|const|let|var|class)\\s+${name}\\b`);
+  const escapedName = escapeRegExp(name);
+  const localDef = new RegExp(`(?:function|const|let|var|class)\\s+${escapedName}\\b`);
   if (localDef.test(content)) continue;
 
   // Is it a function parameter? (check full file)
-  const paramInFunc = new RegExp(`(?:function\\s+\\w*|=>)\\s*\\([^)]*\\b${name}\\b[^)]*\\)`);
+  const paramInFunc = new RegExp(`(?:function\\s+\\w*|=>)\\s*\\([^)]*\\b${escapedName}\\b[^)]*\\)`);
   const strippedFull = stripCommentsAndStrings(content);
   if (paramInFunc.test(strippedFull)) continue;
 

@@ -66,7 +66,9 @@ export function filterJsonOutput(output) {
       const more = keys.length > 15 ? `\n  ... +${keys.length - 15} more keys` : '';
       compressed = `{${keys.length} keys}\n${lines.join('\n')}${more}`;
     } else if (Array.isArray(parsed)) {
-      compressed = `[${parsed.length} items] first: ${extractSchema(parsed[0], 0, 2)}`;
+      compressed = parsed.length === 0
+        ? '[] (empty array)'
+        : `[${parsed.length} items] first: ${extractSchema(parsed[0], 0, 2)}`;
     } else {
       compressed = schema;
     }

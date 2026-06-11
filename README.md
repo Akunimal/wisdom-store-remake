@@ -111,7 +111,7 @@ node /path/to/Anti-Hallucination-MCP/scripts/setup.js --project /path/to/target-
 This script will:
 1. ✅ Detect your OS and environment
 2. ✅ Create `~/.claude` directory if needed
-3. ✅ Configure `~/.claude/settings.json` with MCP server and Claude Code hooks
+3. ✅ Register the MCP server in `~/.claude.json` (user scope) and the PostToolUse hooks in `~/.claude/settings.json`
 4. ✅ Configure `~/.codex/config.toml` with the MCP server
 5. ✅ Configure `~/.gemini/antigravity-ide/mcp_config.json` with the MCP server
 6. ✅ Validate installation
@@ -136,12 +136,18 @@ This script will:
 
 ## ⚙️ MCP Configuration
 
-Add to your `~/.claude/settings.json` or project's `.mcp.json`:
+Claude Code reads MCP servers from `~/.claude.json` (user scope) or a project's `.mcp.json` — **not** from `settings.json`. The easiest way is the CLI:
+
+```bash
+claude mcp add wisdom-store -s user -- node /path/to/Anti-Hallucination-MCP/src/mcp-server/index.js
+```
+
+Or add the entry manually to `~/.claude.json` (user scope) or `.mcp.json` (project scope):
 
 ```json
 {
   "mcpServers": {
-    "anti-hallucination": {
+    "wisdom-store": {
       "command": "node",
       "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
       "env": {}
@@ -480,7 +486,7 @@ node scripts/setup.js --project /path/to/target-project
 Este script:
 1. ✅ Detecta tu SO y entorno
 2. ✅ Crea el directorio `~/.claude` si es necesario
-3. ✅ Configura `settings.json` con el servidor MCP y hooks
+3. ✅ Registra el servidor MCP en `~/.claude.json` (user scope) y los hooks PostToolUse en `~/.claude/settings.json`
 4. ✅ Configura `~/.codex/config.toml` con el servidor MCP
 5. ✅ Configura `~/.gemini/antigravity-ide/mcp_config.json` con el servidor MCP
 6. ✅ Valida la instalación
@@ -505,12 +511,18 @@ Este script:
 
 ## ⚙️ Configuración MCP
 
-Agrega a tu `~/.claude/settings.json` o `.mcp.json` del proyecto:
+Claude Code lee los servidores MCP desde `~/.claude.json` (user scope) o el `.mcp.json` del proyecto — **no** desde `settings.json`. Lo más simple es la CLI:
+
+```bash
+claude mcp add wisdom-store -s user -- node /path/to/Anti-Hallucination-MCP/src/mcp-server/index.js
+```
+
+O agrega la entrada manualmente a `~/.claude.json` (user scope) o `.mcp.json` (proyecto):
 
 ```json
 {
   "mcpServers": {
-    "anti-hallucination": {
+    "wisdom-store": {
       "command": "node",
       "args": ["/path/to/Anti-Hallucination-MCP/src/mcp-server/index.js"],
       "env": {}

@@ -30,7 +30,7 @@ export const compressOutputDefinition = {
       },
       maxTokens: {
         type: "number",
-        description: "Maximum estimated tokens allowed in output before forced truncation",
+        description: "Soft cap on estimated tokens, applied to generic/unknown command output. Domain filters (git diff, tests, lint) preserve fidelity and self-truncate noise with domain knowledge instead of hard-cutting at this limit.",
         default: 500
       },
       redact: {

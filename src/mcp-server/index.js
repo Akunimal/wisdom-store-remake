@@ -66,7 +66,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.10.2' },
+  { name: 'wisdom-store', version: '0.10.3' },
   { capabilities: { tools: {} } }
 );
 
