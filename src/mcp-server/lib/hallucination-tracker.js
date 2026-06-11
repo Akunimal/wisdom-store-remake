@@ -12,6 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { writeJsonAtomic } from './wisdom.js';
 
 const MAX_ENTRIES = 500;
 const WATCHLIST_THRESHOLD = 3;
@@ -52,7 +53,7 @@ export function recordHallucination(wisdomDir, symbol, filePath, type) {
 
   try {
     fs.mkdirSync(wisdomDir, { recursive: true });
-    fs.writeFileSync(logPath, JSON.stringify(entries, null, 2) + '\n');
+    writeJsonAtomic(logPath, entries);
   } catch {
     // Fail silently — tracking is non-critical
   }

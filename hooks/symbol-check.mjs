@@ -78,7 +78,19 @@ const scanContent = (diffOnly && !isMarkdown) ? diffContent : content;
 let registry;
 try {
   registry = JSON.parse(fs.readFileSync(symbolsFile, 'utf8'));
-} catch { process.exit(0); }
+} catch (err) {
+  // Distinguish a missing registry (nothing to check yet — silent) from a
+  // present-but-corrupt one. A corrupt registry would silently disable all
+  // symbol checking, so warn on stderr (exit 0 keeps the write non-blocking).
+  if (fs.existsSync(symbolsFile)) {
+    process.stderr.write(`[anti-hallucination] symbols.json is corrupt or unreadable (${err.message}); symbol check skipped. Run reindex_project --force to rebuild.\n`);
+  }
+  process.exit(0);
+}
+if (!registry || typeof registry !== 'object') {
+  process.stderr.write('[anti-hallucination] symbols.json has unexpected shape; symbol check skipped. Run reindex_project --force to rebuild.\n');
+  process.exit(0);
+}
 
 // Build set of all known symbols
 const known = new Set();

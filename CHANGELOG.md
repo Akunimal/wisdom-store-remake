@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+Silent-failure audit — seven failure modes that produced wrong results without surfacing an error:
+- **AST parse failure now falls back to regex** (`indexer.js`): when tree-sitter could not parse a file (partial syntax mid-edit, or a grammar that failed to register), the file yielded zero symbols and every symbol in it was then reported as a hallucination. The main extraction path now falls back to regex like the HTML path already did.
+- **Dynamic grammar registration no longer marks success prematurely**: `LANG_MAP['.py'/'.go'/'.rs'].lang` was set *before* `registerDynamicLanguage()`. If registration threw (ABI mismatch, bad prebuild), those extensions pointed at a grammar that never registered and every parse failed silently. `LANG_MAP` is now updated only after a successful register; otherwise the language falls back to regex.
+- **Corrupt scan-cache entries trigger a reparse**: a malformed cache entry (old format, hand-edited) matching mtime+size was either merged (throwing inside the swallowed try) or skipped, losing the file's symbols. Entries are now shape-validated before use.
+- **`index.json` and `hallucinations.json` writes are atomic**: only `symbols.json` was hardened in 0.10.0. A process killed mid-write corrupted these too, and the corrupt file silently reset to empty on next read — wiping the keyword index and the cross-session hallucination watchlist. All three now share `writeJsonAtomic`.
+- **Corrupt registry is distinguished from a missing one**: `check_symbols` reported "No symbol registry found. Run reindex_project" even when `symbols.json` existed but was corrupt, hiding the real failure. New `readSymbolsResult` returns `missing`/`corrupt`/`ok`; the corrupt case tells the user to rebuild with `force: true`.
+- **`symbol-check.mjs` hook warns on a corrupt registry**: previously it `exit 0`'d silently on a JSON parse error, disabling symbol checking with no signal. It now writes a stderr warning when the file exists but is unreadable (still non-blocking).
+
+### Added
+- **Registry staleness warning**: `check_symbols` flags a registry scanned more than 7 days ago when unknowns are present, since stale data wrongly reports new symbols as hallucinations.
+
 ## [0.10.0] - 2026-06-10
 
 ### Added

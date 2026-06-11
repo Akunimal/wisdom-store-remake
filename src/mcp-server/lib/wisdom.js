@@ -16,6 +16,23 @@ import os from 'os';
 
 const GLOBAL_WISDOM_DIR = path.join(os.homedir(), '.claude', 'wisdom');
 
+/**
+ * Atomic JSON write: write to a temp file, then rename over the target.
+ * Prevents a half-written file if the process dies mid-write — a corrupt
+ * JSON file silently resets to empty on the next read, losing the registry,
+ * the keyword index, or the cross-session hallucination watchlist.
+ */
+export function writeJsonAtomic(filePath, data) {
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2) + '\n');
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
+    throw err;
+  }
+}
+
 // Wisdom types that can be stored
 export const WISDOM_TYPES = ['lesson', 'pattern', 'caution', 'edge_case', 'decision', 'plan'];
 
@@ -80,8 +97,7 @@ export function readIndex(wisdomDir) {
  * Write the .wisdom/index.json file.
  */
 export function writeIndex(wisdomDir, index) {
-  const indexPath = path.join(wisdomDir, 'index.json');
-  fs.writeFileSync(indexPath, JSON.stringify(index, null, 2) + '\n');
+  writeJsonAtomic(path.join(wisdomDir, 'index.json'), index);
 }
 
 /**

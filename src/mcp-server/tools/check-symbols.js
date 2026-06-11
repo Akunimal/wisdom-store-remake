@@ -20,7 +20,7 @@ import {
 
 import {
   checkSymbols,
-  readSymbols
+  readSymbolsResult
 } from '../lib/indexer.js';
 
 import {
@@ -38,9 +38,16 @@ export async function handleCheckSymbols(args) {
 
   const projectRoot = findProjectRoot(args.project_path);
   const wisdomDir = getWisdomDir(projectRoot);
-  const registry = readSymbols(wisdomDir);
+  const { registry, status } = readSymbolsResult(wisdomDir);
 
-  if (!registry) {
+  if (status === 'corrupt') {
+    return {
+      content: [{ type: 'text', text: '⚠️ Symbol registry (.wisdom/symbols.json) is corrupt or unreadable — not missing. Every symbol would be falsely reported as unknown. Run `reindex_project` with `force: true` to rebuild it.' }],
+      isError: true
+    };
+  }
+
+  if (status === 'missing' || !registry) {
     return {
       content: [{ type: 'text', text: 'No symbol registry found. Run `reindex_project` first.' }],
       isError: true
@@ -50,6 +57,11 @@ export async function handleCheckSymbols(args) {
   // Strip _meta before checking
   const { _meta, ...symbolCategories } = registry;
   const result = checkSymbols(args.symbols, symbolCategories);
+
+  // Staleness warning: a registry older than the freshness window (or one
+  // predating files edited since the scan) flags legitimately-new symbols as
+  // unknown. Surface it so the user reindexes instead of trusting stale data.
+  const staleNote = registryStalenessNote(_meta);
 
   // Load watchlist for repeat-offender annotations
   let watchlist;
@@ -96,6 +108,11 @@ export async function handleCheckSymbols(args) {
     }
   }
 
+  // Surface staleness only when it could explain the result (unknowns present).
+  if (staleNote && result.unknown.length > 0) {
+    lines.push(staleNote);
+  }
+
   // Optionally include known symbols if verbose
   if (args.verbose && result.known.length > 0) {
     lines.push('');
@@ -122,4 +139,21 @@ export async function handleCheckSymbols(args) {
   return {
     content: [{ type: 'text', text: lines.join('\n') }]
   };
+}
+
+// Registry is considered stale after this many days since the last scan.
+const STALENESS_DAYS = 7;
+
+/**
+ * Build a staleness warning from registry _meta, or null if fresh/unknown.
+ * Returns a hint to reindex when the registry is older than STALENESS_DAYS.
+ */
+function registryStalenessNote(meta) {
+  const scanned = meta && meta.scanned;
+  if (!scanned) return null;
+  const scannedMs = Date.parse(scanned);
+  if (Number.isNaN(scannedMs)) return null;
+  const ageDays = (Date.now() - scannedMs) / (1000 * 60 * 60 * 24);
+  if (ageDays < STALENESS_DAYS) return null;
+  return `ℹ️ Registry last scanned ${Math.floor(ageDays)} days ago — new symbols may be wrongly flagged as unknown. Run \`refresh_symbols\` to update it.`;
 }

@@ -21,6 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { parse, Lang, registerDynamicLanguage } from '@ast-grep/napi';
 import { createRequire } from 'module';
+import { writeJsonAtomic } from './wisdom.js';
 
 const require = createRequire(import.meta.url);
 
@@ -165,29 +166,39 @@ function initDynamicLanguages() {
     return null;
   }
 
+  // Map ext → LANG_MAP lang value to apply only after a successful register.
+  // Assigning before registration risks pointing .py/.go/.rs at a grammar
+  // that never registered (ABI mismatch, bad prebuild) — every parse would
+  // then fail and the file would yield zero symbols.
+  const pending = [];
+
   const pyPath = findPrebuild('tree-sitter-python');
   if (pyPath) {
     toRegister['Python'] = { libraryPath: pyPath, extensions: ['py'], languageSymbol: 'tree_sitter_python' };
-    LANG_MAP['.py'].lang = 'Python';
+    pending.push(['.py', 'Python']);
   }
 
   const goPath = findPrebuild('tree-sitter-go');
   if (goPath) {
     toRegister['Go'] = { libraryPath: goPath, extensions: ['go'], languageSymbol: 'tree_sitter_go' };
-    LANG_MAP['.go'].lang = 'Go';
+    pending.push(['.go', 'Go']);
   }
 
   const rustPath = findPrebuild('tree-sitter-rust');
   if (rustPath) {
     toRegister['Rust'] = { libraryPath: rustPath, extensions: ['rs'], languageSymbol: 'tree_sitter_rust' };
-    LANG_MAP['.rs'].lang = 'Rust';
+    pending.push(['.rs', 'Rust']);
   }
 
   if (Object.keys(toRegister).length > 0) {
     try {
       registerDynamicLanguage(toRegister);
+      // Only now is it safe to route these extensions through the AST path.
+      for (const [ext, lang] of pending) LANG_MAP[ext].lang = lang;
     } catch (e) {
-      console.error("Anti-Hallucination: Failed to register dynamic AST languages", e);
+      // Registration failed — leave LANG_MAP[ext].lang === null so these
+      // languages fall back to regex extraction instead of failing every parse.
+      console.error("Anti-Hallucination: Failed to register dynamic AST languages, using regex fallback", e);
     }
   }
 }
@@ -225,6 +236,22 @@ function readScanCache(projectRoot) {
     if (parsed && parsed.version === SCAN_CACHE_VERSION && parsed.files) return parsed;
   } catch { /* no cache or unreadable — full scan */ }
   return null;
+}
+
+/**
+ * Validate a cache entry's shape before trusting it. A malformed entry
+ * (old format, hand-edited, truncated) must force a reparse rather than
+ * crash mergeFileSymbols or silently contribute nothing.
+ */
+function isValidCacheEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (typeof entry.lang !== 'string') return false;
+  const s = entry.symbols;
+  if (!s || typeof s !== 'object') return false;
+  for (const cat of ['functions', 'classes', 'variables', 'exports']) {
+    if (!s[cat] || typeof s[cat] !== 'object') return false;
+  }
+  return true;
 }
 
 function writeScanCache(projectRoot, cache) {
@@ -316,9 +343,12 @@ function walkDir(dir, ctx, depth) {
       const sizeLimit = langInfo.name === 'html' ? 5 * 1024 * 1024 : 500 * 1024;
       if (stat.size > sizeLimit) continue;
 
-      // Incremental: reuse cached symbols when mtime+size unchanged
+      // Incremental: reuse cached symbols when mtime+size unchanged.
+      // isValidCacheEntry guards against a malformed/old cache shape — a bad
+      // entry must trigger a reparse, not be merged (TypeError) or skipped.
       const cached = ctx.cache[relPath];
-      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size &&
+          isValidCacheEntry(cached)) {
         ctx.files.push({
           path: relPath,
           lang: cached.lang,
@@ -347,7 +377,13 @@ function walkDir(dir, ctx, depth) {
       if (langInfo.name === 'html') {
         extractHtml(relPath, content, fileSymbols);
       } else if (langInfo.lang) {
-        extractWithAst(relPath, content, langInfo.lang, fileSymbols);
+        // AST parse can fail on partial/invalid syntax (a file mid-edit) or a
+        // grammar that did not register. Fall back to regex so the file still
+        // contributes symbols instead of being reported as all-unknown.
+        const parsed = extractWithAst(relPath, content, langInfo.lang, fileSymbols);
+        if (!parsed) {
+          extractWithRegex(relPath, lines, langInfo.name, fileSymbols);
+        }
       } else {
         extractWithRegex(relPath, lines, langInfo.name, fileSymbols);
       }
@@ -1136,29 +1172,26 @@ function levenshtein(a, b) {
   return prev[a.length];
 }
 
-export function readSymbols(wisdomDir) {
+/**
+ * Read the registry, distinguishing "absent" from "corrupt".
+ * Returns { registry, status } where status is 'ok' | 'missing' | 'corrupt'.
+ * A corrupt registry must not be silently treated as missing — that hides a
+ * real failure and tells the user to reindex as if the file were never there.
+ */
+export function readSymbolsResult(wisdomDir) {
   const symbolsPath = path.join(wisdomDir, 'symbols.json');
-  if (!fs.existsSync(symbolsPath)) return null;
+  if (!fs.existsSync(symbolsPath)) return { registry: null, status: 'missing' };
   try {
-    return JSON.parse(fs.readFileSync(symbolsPath, 'utf8'));
+    const registry = JSON.parse(fs.readFileSync(symbolsPath, 'utf8'));
+    if (!registry || typeof registry !== 'object') return { registry: null, status: 'corrupt' };
+    return { registry, status: 'ok' };
   } catch {
-    return null;
+    return { registry: null, status: 'corrupt' };
   }
 }
 
-/**
- * Atomic JSON write: write to a temp file, then rename over the target.
- * Prevents a half-written file if the process dies mid-write.
- */
-function writeJsonAtomic(filePath, data) {
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2) + '\n');
-  try {
-    fs.renameSync(tmpPath, filePath);
-  } catch (err) {
-    try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
-    throw err;
-  }
+export function readSymbols(wisdomDir) {
+  return readSymbolsResult(wisdomDir).registry;
 }
 
 export function writeSymbols(wisdomDir, symbols) {

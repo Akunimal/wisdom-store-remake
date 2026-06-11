@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { scanProject, checkSymbols, readSymbols, writeSymbols } from '../src/mcp-server/lib/indexer.js';
+import { scanProject, checkSymbols, readSymbols, readSymbolsResult, writeSymbols } from '../src/mcp-server/lib/indexer.js';
 
 function makeProject(files = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wsr-indexer-'));
@@ -195,5 +195,74 @@ describe('gitignore negation', () => {
     fs.writeFileSync(path.join(root, '.gitignore'), 'generated/\n');
     const scan = scanProject(root, { incremental: false });
     assert.equal(scan.symbols.functions.gen, undefined);
+  });
+});
+
+describe('AST parse failure falls back to regex', () => {
+  it('still extracts symbols from a JS file with unparseable syntax', () => {
+    // Valid function decl on line 1, then garbage that breaks the AST parse.
+    const root = makeProject({
+      'src/a.js': 'function works(){}\nconst x = @@@ broken !!! syntax <<<\n',
+    });
+    const scan = scanProject(root, { incremental: false });
+    // Regex fallback should still find the declaration the AST path missed.
+    assert.ok(scan.symbols.functions.works);
+  });
+});
+
+describe('corrupt scan-cache entries trigger reparse', () => {
+  it('reparses when a cached entry is missing its symbols field', () => {
+    const root = makeProject({ 'src/a.js': 'export function alpha(){}\n' });
+    const wisdomDir = path.join(root, '.wisdom');
+    fs.mkdirSync(wisdomDir);
+
+    const stat = fs.statSync(path.join(root, 'src', 'a.js'));
+    // Hand-write a cache whose entry matches mtime+size but is malformed.
+    fs.writeFileSync(path.join(wisdomDir, 'scan-cache.json'), JSON.stringify({
+      version: 1,
+      files: {
+        [path.join('src', 'a.js')]: {
+          mtimeMs: stat.mtimeMs,
+          size: stat.size,
+          lang: 'javascript',
+          lines: 1,
+          modified: '2026-01-01'
+          // symbols intentionally omitted — must not crash or be skipped
+        }
+      }
+    }));
+
+    const scan = scanProject(root);
+    // Must reparse (not merge a broken entry, not skip the file).
+    assert.ok(scan.symbols.functions.alpha);
+  });
+});
+
+describe('readSymbolsResult distinguishes missing from corrupt', () => {
+  it('reports missing when symbols.json does not exist', () => {
+    const root = makeProject();
+    const wisdomDir = path.join(root, '.wisdom');
+    fs.mkdirSync(wisdomDir);
+    const res = readSymbolsResult(wisdomDir);
+    assert.equal(res.status, 'missing');
+    assert.equal(res.registry, null);
+  });
+
+  it('reports corrupt when symbols.json is not valid JSON', () => {
+    const root = makeProject();
+    const wisdomDir = path.join(root, '.wisdom');
+    fs.mkdirSync(wisdomDir);
+    fs.writeFileSync(path.join(wisdomDir, 'symbols.json'), '{ broken json');
+    const res = readSymbolsResult(wisdomDir);
+    assert.equal(res.status, 'corrupt');
+  });
+
+  it('reports ok and keeps readSymbols working for valid registries', () => {
+    const root = makeProject();
+    const wisdomDir = path.join(root, '.wisdom');
+    fs.mkdirSync(wisdomDir);
+    writeSymbols(wisdomDir, { _meta: {}, functions: { foo: { file: 'a.js', line: 1 } } });
+    assert.equal(readSymbolsResult(wisdomDir).status, 'ok');
+    assert.ok(readSymbols(wisdomDir).functions.foo);
   });
 });
