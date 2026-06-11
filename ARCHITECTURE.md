@@ -85,7 +85,7 @@ Todos los tests dependían de librerías eliminadas:
 | Tool | Propósito | Estado |
 |------|-----------|--------|
 | `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes. **Modo compacto** por defecto (~250 tokens vs ~1,500 tokens) | ✅ Companion |
-| `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | ✅ Core |
+| `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json`. **Indexado incremental** (cache por mtime+size); `force: true` reparsea todo | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
 | `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados con **confidence scoring** y **watchlist** | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |
@@ -93,12 +93,35 @@ Todos los tests dependían de librerías eliminadas:
 | `get_hallucination_report` | Reporte de alucinaciones frecuentes, recientes y por tipo entre sesiones | ✅ Companion (v0.8.0) |
 | `get_compression_stats` | Analítica de compresión a nivel de sesión: tokens ahorrados, categorías, top ahorros | ✅ Companion (v0.8.0) |
 
+### Indexado: cache incremental y configuración (v0.10.0+)
+
+El scan reutiliza `.wisdom/scan-cache.json` (clave: `mtime` + `size` por archivo);
+los archivos sin cambios no se reparsean. El cache solo se escribe si `.wisdom/`
+ya existe, así que un scan de solo-lectura (`get_project_overview`) nunca crea
+directorios. `reindex_project`/`refresh_symbols` aceptan `force: true` para
+saltarse el cache.
+
+Directorios a saltar:
+- **No anulables** (`node_modules`, `.git`, `dist`, `build`, `target`, …) — nunca se indexan.
+- **Por defecto, anulables** (`data`, `content`, `public`, `archive`, …) — se pueden
+  re-incluir.
+
+Configuración vía `.wisdom/config.json` (u opciones de scan):
+
+```json
+{ "skipDirs": ["mi-dir-generado"], "includeDirs": ["content"] }
+```
+
+Todas las escrituras de JSON (`symbols.json`, `index.json`, `hallucinations.json`,
+`scan-cache.json`) y el auto-fix de typos son **atómicas** (temp + rename): un
+proceso que muere a mitad no puede corromper el registry ni truncar el código del usuario.
+
 ### Librerías mantenidas (4 archivos)
 
 ```
 src/mcp-server/lib/
   ✅ indexer.js             — AST parser (@ast-grep/napi) + symbol check + fuzzy matching + confidence scoring
-  ✅ wisdom.js              — Utilidades: findProjectRoot, getWisdomDir, readSymbols, writeSymbols
+  ✅ wisdom.js              — Utilidades: findProjectRoot, getWisdomDir, readSymbols, writeSymbols, writeJsonAtomic (escritura atómica compartida)
   ✅ hallucination-tracker.js — Persistencia cross-session de alucinaciones + watchlist (v0.8.0)
   ✅ compression-stats.js    — Analítica in-memory de compresión por sesión (v0.8.0)
 ```

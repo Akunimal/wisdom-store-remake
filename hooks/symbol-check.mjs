@@ -14,6 +14,23 @@
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * Write a file atomically: write to a sibling temp file, then rename over the
+ * target. A crash mid-write must never truncate the user's source file — the
+ * old content stays intact until the rename completes. Temp lives in the same
+ * directory so the rename is atomic on the same filesystem.
+ */
+function writeFileAtomic(targetPath, content) {
+  const tmpPath = `${targetPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, content, 'utf8');
+  try {
+    fs.renameSync(tmpPath, targetPath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
+    throw err;
+  }
+}
+
 const args = process.argv.slice(2);
 
 const filePath = args[0];
@@ -592,7 +609,7 @@ if (fixedTypos.length > 0) {
       infos.push(`[INFO] Detecté el typo '${typo.wrong}', lo auto-corregí a '${typo.right}' por ti en ${fileName}. Re-lee el archivo antes de editarlo de nuevo.`);
     }
     try {
-      fs.writeFileSync(filePath, newContent, 'utf8');
+      writeFileAtomic(filePath, newContent);
     } catch (e) {
       warnings.push(`No se pudo auto-corregir el archivo: ${e.message}`);
     }

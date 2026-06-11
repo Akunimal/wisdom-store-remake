@@ -1,6 +1,6 @@
 {
   "name": "anti-hallucination-mcp",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Minimalist MCP server + hooks for anti-hallucination in AI coding assistants. Detects hallucinated symbols, typos in imports, and invalid API routes via AST-based fuzzy matching.",
   "type": "module",
   "license": "MIT",

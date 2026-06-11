@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-06-11
+
+### Fixed
+- **Typo auto-fix writes atomically** (`symbol-check.mjs`): with `ANTIHALL_AUTOFIX=1`, the hook rewrote the user's source file with a direct `writeFileSync`. A crash mid-write could truncate the file being edited. It now writes to a sibling temp file and renames over the target, so the original stays intact until the write completes.
+
+### Documentation
+- Documented the incremental scan cache (`.wisdom/scan-cache.json`), the `force` option, the non-overridable vs. default skip-dir tiers, `.wisdom/config.json` (`skipDirs`/`includeDirs`), and the atomic-write guarantee in `ARCHITECTURE.md`.
+
 ## [0.10.1] - 2026-06-10
 
 ### Fixed

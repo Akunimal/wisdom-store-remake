@@ -309,6 +309,45 @@ test('symbol hook auto-corrects typos only in executable code when ANTIHALL_AUTO
   assert.ok(updated.includes('// knownFunk should stay in comments'));
   assert.ok(updated.includes("'knownFunk should stay in strings'"));
   assert.ok(updated.includes('knownFunc();'));
+  // Atomic write must not leave a temp sibling behind.
+  const leftovers = fs.readdirSync(tempRoot).filter(f => f.includes('.tmp'));
+  assert.deepStrictEqual(leftovers, []);
+});
+
+test('symbol hook warns on a corrupt registry instead of failing silently', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-corrupt-'));
+  const sourcePath = path.join(tempRoot, 'index.js');
+  const registryPath = path.join(tempRoot, 'symbols.json');
+
+  fs.writeFileSync(sourcePath, 'knownFunc();\n');
+  fs.writeFileSync(registryPath, '{ this is not valid json');
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], { encoding: 'utf8' });
+
+  // Non-blocking (exit 0) but it must signal the problem on stderr.
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stderr, /corrupt|unreadable/i);
+});
+
+test('symbol hook stays silent when the registry is simply absent', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wisdom-store-absent-'));
+  const sourcePath = path.join(tempRoot, 'index.js');
+  const registryPath = path.join(tempRoot, 'symbols.json'); // never created
+
+  fs.writeFileSync(sourcePath, 'knownFunc();\n');
+
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'hooks', 'symbol-check.mjs'),
+    sourcePath,
+    registryPath
+  ], { encoding: 'utf8' });
+
+  assert.strictEqual(result.status, 0);
+  assert.doesNotMatch(result.stderr, /corrupt|unreadable/i);
 });
 
 test('symbol hook warns on markdown code typos without rewriting prose', () => {
