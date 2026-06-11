@@ -44,6 +44,7 @@ import { handleDetectEnvironment } from './tools/detect-environment.js';
 import { compressOutputDefinition, compressOutputHandler } from './tools/compress-output.js';
 import { watchProjectDefinition, handleWatchProject } from './tools/watch-project.js';
 import { fileSkeletonDefinition, handleFileSkeleton } from './tools/get-file-skeleton.js';
+import { genAgentsContextDefinition, handleGenAgentsContext } from './tools/gen-agents-context.js';
 import { hallucinationReportDefinition, handleHallucinationReport } from './tools/get-hallucination-report.js';
 import { compressionStatsDefinition, handleCompressionStats } from './tools/get-compression-stats.js';
 
@@ -68,7 +69,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.12.0' },
+  { name: 'wisdom-store', version: '0.13.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -157,6 +158,12 @@ const TOOLS = [
         verbose: {
           type: 'boolean',
           description: 'If true, include full list of known symbols. Default: false.'
+        },
+        format: {
+          type: 'string',
+          description: 'Output format: "text" (default, human/LLM-readable) or "json" (structured: known/fuzzy/unknown arrays + confidence).',
+          enum: ['text', 'json'],
+          default: 'text'
         }
       },
       required: ['symbols']
@@ -190,6 +197,7 @@ const TOOLS = [
   compressOutputDefinition,
   watchProjectDefinition,
   fileSkeletonDefinition,
+  genAgentsContextDefinition,
   hallucinationReportDefinition,
   compressionStatsDefinition
 ];
@@ -229,6 +237,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await handleWatchProject(args);
       case 'get_file_skeleton':
         return await handleFileSkeleton(args);
+      case 'gen_agents_context':
+        return await handleGenAgentsContext(args);
       case 'get_hallucination_report':
         return await handleHallucinationReport(args);
       case 'get_compression_stats':

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-06-11
+
+Phase 3 of the v2 roadmap — make the engine universal: usable by any agent, any model, with or without MCP.
+
+### Added
+- **Standalone CLI** (`bin/cli.js`, `anti-hallucination` bin): the full engine — `index`, `check`, `skeleton`, `overview`, `report`, `agents`, `setup` — usable from any shell, so Codex, Cursor, Aider, a CI job, or a human can use it without an MCP client. `--project PATH` on all commands; `--json` on `check`/`skeleton`. Run via `npx anti-hallucination <cmd>`.
+- **`gen_agents_context` tool** (`tools/gen-agents-context.js`): writes a managed, auto-generated guardrails block (anti-hallucination rules + repeat-offender watchlist + key symbols/API-route map) into a convention file (`AGENTS.md` by default). Any agent that reads these files — Claude Code, Codex, Cursor, Gemini, Copilot — inherits the protection with no MCP or hooks. Idempotent: re-running updates the block in place between markers and preserves hand-written content.
+- **Structured JSON output** (`format: "json"`) on `check_symbols` (known/fuzzy/unknown arrays + confidence + status) and `get_file_skeleton` (functions/classes/exports), for non-LLM/programmatic clients.
+
+### Packaging
+- New bin `anti-hallucination` → CLI; `npm run setup` and `npm run cli` scripts; `bin/` added to the published `files`. The package now exposes the MCP server, the CLI, and the installer as first-class entry points.
+
 ## [0.12.0] - 2026-06-11
 
 Phase 2 of the v2 roadmap — go beyond "does this symbol exist" toward "is it being used correctly," and prevent hallucinations before they're written.

@@ -139,6 +139,19 @@ export async function handleCheckSymbols(args) {
     // Tracking is non-critical — never fail the check due to tracking errors
   }
 
+  // Structured output for programmatic clients (CLI --json, non-LLM agents).
+  if (args.format === 'json') {
+    const payload = {
+      status,
+      overallConfidence: result.overallConfidence,
+      stale: !!staleNote,
+      known: result.known.map((k) => ({ name: k.name, category: k.category, file: k.file, line: k.line, established: !!k.established })),
+      fuzzy: result.fuzzy.map((f) => ({ queried: f.queried, suggestion: f.suggestion, confidence: f.confidence, category: f.category, file: f.file, line: f.line })),
+      unknown: result.unknown.map((u) => u.name)
+    };
+    return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
+  }
+
   return {
     content: [{ type: 'text', text: lines.join('\n') }]
   };

@@ -1,16 +1,19 @@
 {
   "name": "anti-hallucination-mcp",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Minimalist MCP server + hooks for anti-hallucination in AI coding assistants. Detects hallucinated symbols, typos in imports, and invalid API routes via AST-based fuzzy matching.",
   "type": "module",
   "license": "MIT",
   "main": "src/mcp-server/index.js",
   "bin": {
     "wisdom-store": "src/mcp-server/index.js",
-    "anti-hallucination-mcp": "src/mcp-server/index.js"
+    "anti-hallucination-mcp": "src/mcp-server/index.js",
+    "anti-hallucination": "bin/cli.js"
   },
   "scripts": {
     "start": "node src/mcp-server/index.js",
+    "setup": "node scripts/setup.js",
+    "cli": "node bin/cli.js",
     "inspector": "npx @modelcontextprotocol/inspector node src/mcp-server/index.js",
     "test": "node --test",
     "lint": "eslint ."
@@ -44,6 +47,7 @@
     "src/",
     "hooks/",
     "scripts/",
+    "bin/",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"

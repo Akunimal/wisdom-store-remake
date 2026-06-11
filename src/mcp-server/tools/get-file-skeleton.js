@@ -126,7 +126,13 @@ export const fileSkeletonDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      file_path: { type: 'string', description: 'Path to the file to skeletonize.' }
+      file_path: { type: 'string', description: 'Path to the file to skeletonize.' },
+      format: {
+        type: 'string',
+        description: 'Output format: "text" (default) or "json" (structured: functions/classes/exports).',
+        enum: ['text', 'json'],
+        default: 'text'
+      }
     },
     required: ['file_path']
   }
@@ -149,6 +155,7 @@ export async function handleFileSkeleton(args = {}) {
   const ext = path.extname(filePath);
   const astLang = AST_LANGS[ext];
   const name = path.basename(filePath);
+  const asJson = args.format === 'json';
   const lines = [];
 
   if (astLang) {
@@ -159,6 +166,9 @@ export async function handleFileSkeleton(args = {}) {
       skel = null;
     }
     if (skel) {
+      if (asJson) {
+        return { content: [{ type: 'text', text: JSON.stringify({ file: name, lines: totalLines, ...skel }, null, 2) }] };
+      }
       const symCount = skel.functions.length + skel.classes.length;
       lines.push(`# Skeleton: ${name} (${totalLines} lines → ${symCount} symbols)`);
       if (skel.classes.length) {
@@ -183,6 +193,9 @@ export async function handleFileSkeleton(args = {}) {
 
   // Generic / fallback
   const decls = extractGenericSkeleton(content);
+  if (asJson) {
+    return { content: [{ type: 'text', text: JSON.stringify({ file: name, lines: totalLines, declarations: decls }, null, 2) }] };
+  }
   lines.push(`# Skeleton: ${name} (${totalLines} lines → ${decls.length} declarations)`);
   if (decls.length === 0) {
     lines.push('\n(no recognizable declarations — read the file directly)');

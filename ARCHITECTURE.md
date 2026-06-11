@@ -80,7 +80,7 @@ Todos los tests dependían de librerías eliminadas:
 
 ## ✅ Qué fue mantenido
 
-### Tools actuales (10)
+### Tools actuales (11)
 
 | Tool | Propósito | Estado |
 |------|-----------|--------|
@@ -89,6 +89,7 @@ Todos los tests dependían de librerías eliminadas:
 | `watch_project` | Watcher en segundo plano: rescan incremental al cambiar archivos, mantiene el registry fresco sin `refresh_symbols` (v0.11.0) | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
 | `get_file_skeleton` | Firmas/clases/exports de un archivo sin cuerpos (~85-95% menos tokens). Preventivo: el agente ve firmas reales antes de llamar (v0.12.0) | ✅ Core |
+| `gen_agents_context` | Escribe bloque de guardrails (reglas + watchlist + mapa de símbolos) en AGENTS.md/CLAUDE.md — distribución agnóstica al modelo, sin MCP ni hooks (v0.13.0) | ✅ Companion |
 | `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados con **confidence scoring** y **watchlist** | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |
 | `compress_output` | Ejecuta comandos y comprime output. **Auto-redacta secretos**. **Agrupa líneas similares** (v0.8.1) | ⚠️ Companion con superficie de ejecución |
