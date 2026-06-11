@@ -38,8 +38,6 @@ function textOf(result) {
 }
 
 test('wisdom exported helpers work end-to-end', () => {
-  assert.ok(wisdom.WISDOM_TYPES.includes('lesson'));
-
   const project = tmpdir();
   fs.writeFileSync(path.join(project, 'package.json'), '{}');
   fs.mkdirSync(path.join(project, 'src', 'lib'), { recursive: true });
@@ -47,23 +45,16 @@ test('wisdom exported helpers work end-to-end', () => {
 
   const wisdomDir = wisdom.getWisdomDir(project, true);
   assert.ok(fs.existsSync(wisdomDir));
+  assert.ok(Array.isArray(wisdom.readIndex(wisdomDir).files));
 
-  wisdom.writeIndex(wisdomDir, { sections: {}, plans: {}, keywords: {} });
-  wisdom.updateIndexKeywords(wisdomDir, ['Token'], 'sections/token.md');
-  assert.deepEqual(wisdom.readIndex(wisdomDir).keywords.token, ['sections/token.md']);
+  wisdom.writeIndex(wisdomDir, { files: [{ path: 'src/a.js' }], keywords: {} });
+  assert.equal(wisdom.readIndex(wisdomDir).files[0].path, 'src/a.js');
 
-  const source = path.join(project, 'src', 'a.js');
-  fs.writeFileSync(source, '');
-  wisdom.writeSidecar(source, 'lesson', 'Prefer exact checks');
-  assert.ok(wisdom.readSidecar(source).Lessons[0].includes('Prefer exact checks'));
-
-  wisdom.writeSection(wisdomDir, 'alpha', 'alpha keyword');
-  wisdom.writePlan(wisdomDir, 'beta', 'beta keyword');
-  wisdom.writePattern(wisdomDir, 'gamma', 'gamma keyword');
-  assert.equal(wisdom.readSection(wisdomDir, 'alpha'), 'alpha keyword');
-  assert.equal(wisdom.readPlan(wisdomDir, 'beta'), 'beta keyword');
-  assert.equal(wisdom.readPattern(wisdomDir, 'gamma'), 'gamma keyword');
-  assert.ok(wisdom.searchWisdom(project, 'keyword').length >= 3);
+  // writeJsonAtomic round-trips and leaves no temp file behind
+  const target = path.join(wisdomDir, 'atomic.json');
+  wisdom.writeJsonAtomic(target, { ok: true });
+  assert.equal(JSON.parse(fs.readFileSync(target, 'utf8')).ok, true);
+  assert.ok(!fs.readdirSync(wisdomDir).some((f) => f.endsWith('.tmp')));
 });
 
 test('tracker and compression stat exports work', () => {

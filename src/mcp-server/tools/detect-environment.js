@@ -342,8 +342,11 @@ function detectPackageManagers(nativeToolchain) {
   }
 
   for (const name of ['yarn', 'pnpm', 'bun', 'pip', 'pip3', 'poetry', 'conda']) {
-    const version = versionOf(name);
+    // Resolve the binary first (fast where/which) and only spawn the
+    // `--version` probe when it exists — absent managers otherwise cost a
+    // full failed-spawn each, adding seconds to the tool on lean systems.
     const binPath = commandPath(name);
+    const version = binPath ? versionOf(name) : null;
     if (version || binPath) {
       managers.push({ name, type: name.startsWith('pip') || ['poetry', 'conda'].includes(name) ? 'python' : 'node', path: binPath, version });
     }
@@ -375,7 +378,7 @@ function chooseRecommendation({ wsl, gitBash, nativeToolchain }) {
       return {
         shell: 'WSL Ubuntu/Linux',
         reason: 'Default WSL distro has bash, git, node, and npm installed inside Linux.',
-        command: "rtk bash -lc 'npm test'"
+        command: "bash -lc 'npm test'"
       };
     }
 
@@ -383,7 +386,7 @@ function chooseRecommendation({ wsl, gitBash, nativeToolchain }) {
       return {
         shell: 'Git Bash',
         reason: 'Git Bash has a coherent Windows-native git/node/npm toolchain.',
-        command: 'rtk "C:\\Program Files\\Git\\bin\\bash.exe" -lc \'npm test\''
+        command: '"C:\\Program Files\\Git\\bin\\bash.exe" -lc \'npm test\''
       };
     }
 
@@ -391,7 +394,7 @@ function chooseRecommendation({ wsl, gitBash, nativeToolchain }) {
       return {
         shell: 'Native Windows command',
         reason: 'Native Windows node/npm/git are available; use PowerShell/cmd syntax only.',
-        command: 'rtk npm test'
+        command: 'npm test'
       };
     }
 
@@ -405,7 +408,7 @@ function chooseRecommendation({ wsl, gitBash, nativeToolchain }) {
   return {
     shell: path.basename(process.env.SHELL || 'sh'),
     reason: 'Non-Windows shells have consistent POSIX quoting by default.',
-    command: 'rtk npm test'
+    command: 'npm test'
   };
 }
 
@@ -430,7 +433,7 @@ function getPlatformRules(context) {
       'bash': context.plainBash.available
         ? `Plain bash currently targets ${context.plainBash.target}.`
         : 'Plain bash is not available.',
-      'rtk bash -lc': context.wsl?.usableDefault
+      'bash -lc': context.wsl?.usableDefault
         ? 'Preferred for Linux-style commands when WSL toolchain is complete.'
         : 'Only use after installing a real WSL distro and required tools.',
       'git-bash': context.gitBash?.available

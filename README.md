@@ -123,7 +123,7 @@ This script will:
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
-| `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules. Returns compact text (~250 tokens) by default; pass `compact: false` for full JSON diagnostic | At the start of a session or when in doubt about command compatibility (especially on Windows) |
+| `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules. Returns the full JSON diagnostic by default; pass `compact: true` for a concise text summary (~250 tokens) | At the start of a session or when in doubt about command compatibility (especially on Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry with **confidence scoring** (0-100%). Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌. Flags repeat offenders across sessions | After writing new code |
@@ -209,7 +209,7 @@ startup_timeout_sec = 15
 
 You can manually disable any tool with `WISDOM_STORE_DISABLED_TOOLS`, using comma-separated names.
 
-The setup also removes redundant repo-level MCP entries automatically when a better equivalent is already configured, while leaving global MCP configs untouched so other projects are not affected. Before changing an existing config file, it writes a timestamped `.backup.<timestamp>` copy next to that file.
+The setup also detects redundant repo-level MCP entries when a better equivalent is already configured. By default it only reports them; pass `--cleanup-redundant` to actually remove them (global MCP configs are never touched, so other projects are not affected). Before changing an existing config file, it writes a timestamped `.backup.<timestamp>` copy next to that file (the newest 3 are kept).
 
 ---
 
@@ -329,15 +329,15 @@ The `detect_environment` tool helps prevent cross-platform command errors by ana
 - Syntax warnings (redirection, exports, sourcing)
 - Critical recommendations for Windows users
 
-**Compact mode (v0.8.1):** By default, returns a concise text summary (~250 tokens) with only the recommendation, key rules, and warnings. Pass `compact: false` to get the full JSON diagnostic (~1,500 tokens) for debugging.
+**Compact mode (v0.8.1):** Returns the full JSON diagnostic (~1,500 tokens) by default. Pass `compact: true` to get a concise text summary (~250 tokens) with only the recommendation, key rules, and warnings.
 
 **Usage:**
 ```bash
-# Call via MCP (compact by default)
+# Call via MCP (full JSON by default)
 /detect_environment
 
-# Full JSON diagnostic
-/detect_environment {"compact": false}
+# Compact text summary
+/detect_environment {"compact": true}
 
 # Or standalone
 node src/mcp-server/tools/detect-environment.js
@@ -498,7 +498,7 @@ Este script:
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
-| `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting. Retorna texto compacto (~250 tokens) por defecto; pasá `compact: false` para el JSON completo | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
+| `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting. Retorna el JSON completo por defecto; pasá `compact: true` para un resumen de texto conciso (~250 tokens) | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro con **scoring de confianza** (0-100%). Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌. Marca reincidentes entre sesiones | Después de escribir código nuevo |
@@ -684,15 +684,15 @@ La herramienta `detect_environment` ayuda a prevenir errores de plataforma cruza
 - Advertencias de sintaxis (redirecciones, exports)
 - Recomendaciones críticas para usuarios de Windows
 
-**Modo compacto (v0.8.1):** Por defecto retorna un resumen de texto conciso (~250 tokens) con solo la recomendación, reglas clave y advertencias. Pasá `compact: false` para obtener el JSON completo (~1,500 tokens) para debugging.
+**Modo compacto (v0.8.1):** Por defecto retorna el JSON completo (~1,500 tokens). Pasá `compact: true` para un resumen de texto conciso (~250 tokens) con solo la recomendación, reglas clave y advertencias.
 
 **Uso:**
 ```bash
-# Llamar vía MCP (compacto por defecto)
+# Llamar vía MCP (JSON completo por defecto)
 /detect_environment
 
-# JSON completo para diagnóstico
-/detect_environment {"compact": false}
+# Resumen de texto compacto
+/detect_environment {"compact": true}
 
 # O script standalone
 node src/mcp-server/tools/detect-environment.js

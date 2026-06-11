@@ -90,10 +90,27 @@ test('setup cleans target repo MCP redundancies with backups', () => {
     ''
   ].join('\n'));
 
-  const result = spawnSync(process.execPath, [
+  // Default run is report-only: redundant repo entries must stay untouched.
+  const reportOnly = spawnSync(process.execPath, [
     path.join(rootDir, 'scripts', 'setup.js'),
     '--project',
     targetRepo
+  ], {
+    cwd: rootDir,
+    env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    encoding: 'utf8'
+  });
+  assert.strictEqual(reportOnly.status, 0, reportOnly.stderr || reportOnly.stdout);
+  const untouchedMcp = JSON.parse(fs.readFileSync(path.join(targetRepo, '.mcp.json'), 'utf8'));
+  assert.ok(untouchedMcp.mcpServers.graphify, 'Default run must NOT remove repo MCP entries');
+  assert.ok(reportOnly.stdout.includes('--cleanup-redundant'), 'Default run should suggest the cleanup flag');
+
+  // Opt-in run actually removes the redundant entries.
+  const result = spawnSync(process.execPath, [
+    path.join(rootDir, 'scripts', 'setup.js'),
+    '--project',
+    targetRepo,
+    '--cleanup-redundant'
   ], {
     cwd: rootDir,
     env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
@@ -107,7 +124,10 @@ test('setup cleans target repo MCP redundancies with backups', () => {
   const globalCodex = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
   const globalClaude = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude', 'settings.json'), 'utf8'));
   const postToolUse = globalClaude.hooks.PostToolUse;
+  const claudeJson = JSON.parse(fs.readFileSync(path.join(homeDir, '.claude.json'), 'utf8'));
 
+  assert.ok(claudeJson.mcpServers['wisdom-store'], 'MCP server should be registered in ~/.claude.json');
+  assert.ok(!globalClaude.mcpServers, 'settings.json must not hold mcpServers (Claude Code ignores it there)');
   assert.ok(!projectMcp.mcpServers.graphify, 'Redundant .mcp.json server should be removed');
   assert.ok(!projectCodex.includes('project-overview'), 'Redundant repo Codex server should be removed');
   assert.ok(globalCodex.includes('WISDOM_STORE_DISABLED_TOOLS = "get_project_overview"'), 'Wisdom Store should be complementary');

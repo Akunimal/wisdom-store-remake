@@ -13,6 +13,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { levenshtein } from '../src/mcp-server/lib/levenshtein.js';
 
 /**
  * Write a file atomically: write to a sibling temp file, then rename over the
@@ -434,26 +435,6 @@ for (const match of stripped.matchAll(/(?<![.\w])([a-zA-Z_]\w*)\s*\(/g)) {
   referenced.add(name);
 }
 
-// Levenshtein function
-function getLevenshteinDistance(a, b) {
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const matrix = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
-  for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
-  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + cost
-      );
-    }
-  }
-  return matrix[a.length][b.length];
-}
-
 // Escape regex metacharacters so identifiers containing $, etc. ($http, foo$)
 // don't act as anchors/quantifiers when interpolated into a RegExp below.
 function escapeRegExp(value) {
@@ -517,7 +498,7 @@ for (const name of referenced) {
     let highestConfidence = 0;
     for (const k of known) {
       if (Math.abs(k.length - name.length) > 3) continue;
-      const dist = getLevenshteinDistance(name, k);
+      const dist = levenshtein(name, k);
       const confidence = 1 - (dist / Math.max(name.length, k.length));
       if (confidence >= 0.85 && confidence > highestConfidence) {
         highestConfidence = confidence;

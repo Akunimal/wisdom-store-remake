@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] - 2026-06-11
+
+Second pass of the flow-and-bug audit — remaining low-severity findings and cleanup.
+
+### Fixed
+- **Inline HTML script symbols reported one line below their real position** (`indexer.js`): the line offset for `<script>` blocks counted the tag's own line twice. A function on line 4 was reported at line 5; now it reports line 4.
+- **Jest/Vitest all-passing summaries were not parsed** (`test-filter.js`): `Tests: 20 passed, 20 total` (no `failed` segment) fell through every summary regex. A pass-only pattern (with optional `skipped`) was added.
+- **Watchlist entries kept their first classification forever** (`hallucination-tracker.js`): a symbol first seen as a fuzzy typo stayed `fuzzy` even after becoming a hard unknown. The report now reflects the most recent classification.
+- **README documented `detect_environment` defaults backwards** (EN + ES): it claimed compact output was the default; the tool returns the full JSON diagnostic by default and takes `compact: true` for the summary.
+
+### Changed
+- **Repo MCP redundancy removal is now opt-in** (`scripts/setup.js`): setup silently rewrote the target repo's `.mcp.json` / `.claude/settings.json` / `.codex/config.toml` to delete entries it judged redundant. By default it now only reports them; pass `--cleanup-redundant` to actually remove them.
+- **Config backups are pruned** (`scripts/setup.js`): only the newest 3 `.backup.<timestamp>` copies per file are kept instead of accumulating forever.
+- **`detect_environment` no longer hardcodes `rtk`** in its recommended commands — most installs of this public package don't have that proxy; plain `npm test` / `bash -lc` are recommended instead.
+- **`detect_environment` probes optional package managers only when their binary resolves**, skipping a failed spawn per absent manager (yarn/pnpm/bun/pip/poetry/conda) on lean systems.
+
+### Removed
+- **Dead Wisdom Store code** (`wisdom.js`): sidecar/sections/plans/patterns/search/keyword-index helpers (~60% of the module) had no callers outside their own smoke test since the lite-server refactor. `getWisdomDir` no longer creates unused `sections/`/`plans/`/`patterns/` subdirectories. Kept: `writeJsonAtomic`, `findProjectRoot`, `getWisdomDir`, `readIndex`, `writeIndex`.
+- **Duplicate Levenshtein implementations**: the indexer's two-row version and the hook's full-matrix version are unified in a shared dependency-free `lib/levenshtein.js`, imported by both.
+- **Dead `.env.example` exception** in the directory walker — the `.example` extension was never in `LANG_MAP`, so the carve-out had no effect.
+
 ## [0.10.3] - 2026-06-11
 
 Flow-and-bug audit across the MCP server, compression strategies, hooks, and the installer.

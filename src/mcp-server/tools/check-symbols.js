@@ -58,9 +58,10 @@ export async function handleCheckSymbols(args) {
   const { _meta, ...symbolCategories } = registry;
   const result = checkSymbols(args.symbols, symbolCategories);
 
-  // Staleness warning: a registry older than the freshness window (or one
-  // predating files edited since the scan) flags legitimately-new symbols as
-  // unknown. Surface it so the user reindexes instead of trusting stale data.
+  // Staleness warning: a registry older than the freshness window flags
+  // legitimately-new symbols as unknown. Surface it so the user reindexes
+  // instead of trusting stale data. (Age-based only — comparing against
+  // per-file mtimes would re-stat the whole tree on every check.)
   const staleNote = registryStalenessNote(_meta);
 
   // Load watchlist for repeat-offender annotations

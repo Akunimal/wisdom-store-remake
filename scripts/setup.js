@@ -11,7 +11,7 @@
  * - Validates installation
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { platform } from 'os';
@@ -63,7 +63,7 @@ function logError(msg) {
 }
 
 function parseSetupArgs(args) {
-  const options = { project: null };
+  const options = { project: null, cleanupRedundant: false };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -73,6 +73,11 @@ function parseSetupArgs(args) {
       options.project = arg.slice('--project='.length);
     } else if (arg === '-p') {
       options.project = args[++i];
+    } else if (arg === '--cleanup-redundant') {
+      // Opt-in: actually delete overlapping MCP entries from the repo's
+      // .mcp.json / .claude/settings.json / .codex/config.toml. Default is
+      // report-only — silently rewriting a user's repo config is surprising.
+      options.cleanupRedundant = true;
     }
   }
 
@@ -86,7 +91,24 @@ function createBackup(filePath) {
 
   const backupPath = `${filePath}.backup.${Date.now()}`;
   writeFileSync(backupPath, readFileSync(filePath, 'utf-8'), 'utf-8');
+  pruneBackups(filePath);
   return backupPath;
+}
+
+// Keep only the newest MAX_BACKUPS per file — every setup run that changes a
+// config creates one, and they accumulate forever otherwise.
+const MAX_BACKUPS = 3;
+function pruneBackups(filePath) {
+  try {
+    const dir = dirname(filePath);
+    const base = `${filePath.split(/[\\/]/).pop()}.backup.`;
+    const backups = readdirSync(dir)
+      .filter((name) => name.startsWith(base) && /^\d+$/.test(name.slice(base.length)))
+      .sort((a, b) => Number(b.slice(base.length)) - Number(a.slice(base.length)));
+    for (const stale of backups.slice(MAX_BACKUPS)) {
+      unlinkSync(join(dir, stale));
+    }
+  } catch { /* pruning is best-effort */ }
 }
 
 function writeConfigFile(filePath, content, label) {
@@ -443,15 +465,23 @@ function logMcpCompatibilityReport(servers, analysis) {
   }
 }
 
-function logRepoMcpCleanup(removals) {
-  if (removals.length === 0) {
+function logRepoMcpCleanup(cleanup) {
+  if (cleanup.removals.length === 0 && (!cleanup.suggested || cleanup.suggested.length === 0)) {
     logSuccess('No repo MCP entries needed automatic cleanup.');
     return;
   }
 
-  logWarn('Automatically removed redundant repo MCP entries:');
-  for (const { server, keeper, profile } of removals) {
-    logWarn(`- ${server.name} (${server.source}) overlapped ${profile}; kept ${keeper.name} (${keeper.source})`);
+  if (cleanup.removals.length > 0) {
+    logWarn('Removed redundant repo MCP entries (--cleanup-redundant):');
+    for (const { server, keeper, profile } of cleanup.removals) {
+      logWarn(`- ${server.name} (${server.source}) overlapped ${profile}; kept ${keeper.name} (${keeper.source})`);
+    }
+    return;
+  }
+
+  logWarn('Redundant repo MCP entries detected (left untouched — re-run with --cleanup-redundant to remove):');
+  for (const { server, keeper, profile } of cleanup.suggested) {
+    logWarn(`- ${server.name} (${server.source}) overlaps ${profile}; would keep ${keeper.name} (${keeper.source})`);
   }
 }
 
@@ -517,27 +547,37 @@ let configuredMcpServers = collectMcpServers({
   projectCodex: projectCodexConfig
 });
 let compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
-const cleanup = applyRepoMcpRedundancyFixes(compatibilityAnalysis, {
-  projectClaude: projectClaudeSettings,
-  projectMcpJson,
-  projectCodex: projectCodexConfig
-});
-writeRepoMcpFixes(cleanup, {
-  projectClaude: projectClaudeSettings,
-  projectMcpJson,
-  projectCodex: projectCodexConfig
-});
-projectClaudeSettings = cleanup.configs.projectClaude;
-projectMcpJson = cleanup.configs.projectMcpJson;
-projectCodexConfig = cleanup.configs.projectCodex;
-configuredMcpServers = collectMcpServers({
-  globalClaude: claudeJson,
-  projectClaude: projectClaudeSettings,
-  projectMcpJson,
-  globalCodex: codexConfig,
-  projectCodex: projectCodexConfig
-});
-compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
+// Removing other servers' repo entries rewrites the user's configs — only do
+// it when explicitly asked (--cleanup-redundant). Default: report-only.
+const cleanup = cliOptions.cleanupRedundant
+  ? applyRepoMcpRedundancyFixes(compatibilityAnalysis, {
+      projectClaude: projectClaudeSettings,
+      projectMcpJson,
+      projectCodex: projectCodexConfig
+    })
+  : {
+      removals: [],
+      suggested: getRepoRedundancyRemovals(compatibilityAnalysis),
+      configs: { projectClaude: projectClaudeSettings, projectMcpJson, projectCodex: projectCodexConfig }
+    };
+if (cliOptions.cleanupRedundant) {
+  writeRepoMcpFixes(cleanup, {
+    projectClaude: projectClaudeSettings,
+    projectMcpJson,
+    projectCodex: projectCodexConfig
+  });
+  projectClaudeSettings = cleanup.configs.projectClaude;
+  projectMcpJson = cleanup.configs.projectMcpJson;
+  projectCodexConfig = cleanup.configs.projectCodex;
+  configuredMcpServers = collectMcpServers({
+    globalClaude: claudeJson,
+    projectClaude: projectClaudeSettings,
+    projectMcpJson,
+    globalCodex: codexConfig,
+    projectCodex: projectCodexConfig
+  });
+  compatibilityAnalysis = analyzeMcpCompatibility(configuredMcpServers, mcpName);
+}
 const redundantTools = compatibilityAnalysis.disabledTools;
 const mcpConfig = {
   command: 'node',
@@ -615,7 +655,7 @@ if (isHookConfigured && !hasLegacyHookEntries) {
 }
 
 logMcpCompatibilityReport(configuredMcpServers, compatibilityAnalysis);
-logRepoMcpCleanup(cleanup.removals);
+logRepoMcpCleanup(cleanup);
 
 // 3b. Configure Codex MCP server
 logStep('Configuring ~/.codex/config.toml...');

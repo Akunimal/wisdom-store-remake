@@ -36,6 +36,15 @@ export function filterTestOutput(output) {
       continue;
     }
 
+    // Jest/Vitest all-passing: Tests: 20 passed, 20 total (no "failed" part)
+    const jestPassSummary = trimmed.match(/Tests?:\s*(?:(\d+)\s*skipped,\s*)?(\d+)\s*passed,\s*(\d+)\s*total/i);
+    if (jestPassSummary) {
+      skippedTests = parseInt(jestPassSummary[1] || '0');
+      passedTests = parseInt(jestPassSummary[2]);
+      totalTests = parseInt(jestPassSummary[3]);
+      continue;
+    }
+
     // pytest: 18 passed, 2 failed
     const pytestSummary = trimmed.match(/(\d+)\s*passed.*?(\d+)\s*failed/i) ||
                           trimmed.match(/(\d+)\s*failed.*?(\d+)\s*passed/i);

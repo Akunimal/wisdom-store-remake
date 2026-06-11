@@ -22,6 +22,7 @@ import path from 'path';
 import { parse, Lang, registerDynamicLanguage } from '@ast-grep/napi';
 import { createRequire } from 'module';
 import { writeJsonAtomic } from './wisdom.js';
+import { levenshtein } from './levenshtein.js';
 
 const require = createRequire(import.meta.url);
 
@@ -255,8 +256,9 @@ function isValidCacheEntry(entry) {
 }
 
 function writeScanCache(projectRoot, cache) {
-  // Only persist if .wisdom/ already exists — a read-only scan
-  // (e.g. get_project_overview) must not create directories.
+  // Only persist if .wisdom/ already exists — a direct scanProject() call on
+  // a project that never opted into .wisdom/ must not create directories.
+  // (The MCP tools create .wisdom/ themselves via getWisdomDir before scanning.)
   const wisdomDir = path.join(projectRoot, '.wisdom');
   try {
     if (!fs.existsSync(wisdomDir)) return;
@@ -328,7 +330,7 @@ function walkDir(dir, ctx, depth) {
       continue;
     }
 
-    if (name.startsWith('.') && name !== '.env.example') continue;
+    if (name.startsWith('.')) continue;
 
     const ext = path.extname(name);
     const langInfo = LANG_MAP[ext];
@@ -887,8 +889,12 @@ function extractHtml(filePath, content, symbols) {
   while ((inlineMatch = inlineScriptRegex.exec(content)) !== null) {
     const scriptContent = inlineMatch[1];
     if (!scriptContent.trim()) continue;
-    // Calculate line offset of this script block within the HTML file
-    const blockStart = content.substring(0, inlineMatch.index).split('\n').length;
+    // Line offset of this script block within the HTML file. The script's
+    // first line (index 0) is the remainder of the <script> tag's own line,
+    // and extractors add `line + 1 + offset`, so the offset must be the
+    // tag's line number minus one — otherwise every symbol reports one
+    // line below its real position.
+    const blockStart = content.substring(0, inlineMatch.index).split('\n').length - 1;
     const parsed = extractWithAst(filePath, scriptContent, Lang.JavaScript, symbols, blockStart);
     if (!parsed) {
       // AST parse failed (maybe template syntax) — regex fallback
@@ -1155,30 +1161,6 @@ function findFuzzyMatch(query, names) {
   }
 
   return bestMatch ? { name: bestMatch, distance: bestDistance } : null;
-}
-
-// Two-row Levenshtein: O(min) memory instead of a full matrix
-function levenshtein(a, b) {
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-
-  let prev = new Array(a.length + 1);
-  let curr = new Array(a.length + 1);
-  for (let j = 0; j <= a.length; j++) prev[j] = j;
-
-  for (let i = 1; i <= b.length; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= a.length; j++) {
-      if (b[i - 1] === a[j - 1]) {
-        curr[j] = prev[j - 1];
-      } else {
-        curr[j] = Math.min(prev[j - 1], curr[j - 1], prev[j]) + 1;
-      }
-    }
-    [prev, curr] = [curr, prev];
-  }
-
-  return prev[a.length];
 }
 
 /**

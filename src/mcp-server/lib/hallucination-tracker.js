@@ -141,6 +141,9 @@ export function getHallucinationPatterns(wisdomDir) {
     }
     symbolCounts[entry.symbol].count++;
     symbolCounts[entry.symbol].lastSeen = entry.timestamp;
+    // Track the most recent classification — a symbol first seen as a fuzzy
+    // typo can later become a hard unknown (or vice versa after a reindex).
+    symbolCounts[entry.symbol].type = entry.type;
     if (entry.file) symbolCounts[entry.symbol].files.add(entry.file);
   }
 
