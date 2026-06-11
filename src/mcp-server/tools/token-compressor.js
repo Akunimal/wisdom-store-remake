@@ -12,6 +12,7 @@ import { filterLint } from './strategies/lint-filter.js';
 import { filterFile } from './strategies/file-filter.js';
 import { filterLog } from './strategies/log-filter.js';
 import { filterJson } from './strategies/json-filter.js';
+import { filterBuild } from './strategies/build-filter.js';
 import { filterGeneric, stripAnsi } from './strategies/generic-filter.js';
 import { redactSecrets } from './strategies/secret-redactor.js';
 import { deduplicateLines, groupSimilarLines } from './strategies/dedup-filter.js';
@@ -74,6 +75,19 @@ function detectCommandCategory(commandStr) {
   // System/Logs
   if (base === 'tail' || base === 'head' || base === 'journalctl' || base === 'docker' && args[0] === 'logs') {
     return { category: 'log', base, args };
+  }
+
+  // Build tools — verbose logs whose signal is the errors/warnings.
+  if (base === 'make' || base === 'cmake' || base === 'gradle' || base === 'gradlew' ||
+      base === 'mvn' || base === 'maven' || base === 'bazel' || base === 'webpack' ||
+      base === 'vite' || base === 'esbuild' || base === 'rollup' || base === 'turbo' ||
+      base === 'nx' || base === 'terraform' || base === 'tofu' || base === 'prisma' ||
+      (base === 'docker' && (args[0] === 'build' || args[0] === 'buildx')) ||
+      (base === 'dotnet' && (args[0] === 'build' || args[0] === 'publish' || args[0] === 'restore')) ||
+      (base === 'cargo' && args[0] === 'build') ||
+      (base === 'go' && args[0] === 'build') ||
+      ((base === 'npm' || base === 'yarn' || base === 'pnpm') && (args[0] === 'build' || (args[0] === 'run' && args[1] === 'build')))) {
+    return { category: 'build', base, args };
   }
 
   // Package managers
@@ -163,6 +177,9 @@ export function compressOutput(command, rawOutput, options = {}) {
         break;
       case 'json':
         result = filterJson(cleanOutput, args);
+        break;
+      case 'build':
+        result = filterBuild(cleanOutput, args);
         break;
       // 'package' and 'unknown' fall through to generic filter
     }

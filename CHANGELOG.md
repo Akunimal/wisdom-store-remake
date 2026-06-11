@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-06-11
+
+Phase 4 of the v2 roadmap — trust infrastructure: a published precision number, concurrency safety, and broader command coverage.
+
+### Added
+- **Symbol-extraction precision benchmark** (`scripts/benchmark.js`, `npm run benchmark`): a 12-language ground-truth corpus scored on recall (real symbols found) and precision (no invented symbols). Current result: **100% recall / 100% precision** across the corpus. Wired into CI as its own job with `recall ≥ 90% / precision ≥ 90%` thresholds, so extractor regressions fail the build. (The existing CI already runs the test suite on a 3-OS × 3-Node-version matrix.)
+- **Build-tool output filter** (`strategies/build-filter.js`): `compress_output` now recognizes docker build, webpack, vite, esbuild, rollup, gradle, maven, bazel, dotnet build/publish, make/cmake, terraform, prisma, turbo, and nx — surfacing errors and warnings (deduped) and dropping progress noise, instead of falling through to generic truncation.
+- **Cross-process advisory lock** (`withFileLock` in `lib/wisdom.js`): the hallucination tracker's read-modify-write is now serialized so multiple agents sharing one repo don't clobber each other's appends. Atomic writes already prevented corruption; this prevents lost updates. The lock is strictly bounded and non-blocking — after a short retry budget it proceeds without the lock rather than ever hanging a write hook, and steals a lock older than 5s as orphaned.
+
 ## [0.13.0] - 2026-06-11
 
 Phase 3 of the v2 roadmap — make the engine universal: usable by any agent, any model, with or without MCP.

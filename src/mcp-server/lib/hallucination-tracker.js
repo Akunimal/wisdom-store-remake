@@ -12,7 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { writeJsonAtomic } from './wisdom.js';
+import { writeJsonAtomic, withFileLock } from './wisdom.js';
 
 const MAX_ENTRIES = 500;
 const WATCHLIST_THRESHOLD = 3;
@@ -72,37 +72,46 @@ export function recordHallucinations(wisdomDir, events) {
 
   const logPath = path.join(wisdomDir, HALLUCINATIONS_FILE);
 
-  let entries = [];
-  try {
-    if (fs.existsSync(logPath)) {
-      entries = JSON.parse(fs.readFileSync(logPath, 'utf8'));
-      if (!Array.isArray(entries)) entries = [];
-    }
-  } catch {
-    entries = [];
-  }
-
-  const timestamp = new Date().toISOString();
-  for (const e of events) {
-    entries.push({
-      symbol: e.symbol,
-      file: e.file || '',
-      type: e.type,
-      timestamp,
-      session: process.pid
-    });
-  }
-
-  if (entries.length > MAX_ENTRIES) {
-    entries = entries.slice(entries.length - MAX_ENTRIES);
-  }
-
   try {
     fs.mkdirSync(wisdomDir, { recursive: true });
-    writeJsonAtomic(logPath, entries);
   } catch {
     // Fail silently — tracking is non-critical
   }
+
+  // Lock the read-modify-write so concurrent agents on one repo don't clobber
+  // each other's appends (atomic write already prevents corruption).
+  withFileLock(logPath, () => {
+    let entries = [];
+    try {
+      if (fs.existsSync(logPath)) {
+        entries = JSON.parse(fs.readFileSync(logPath, 'utf8'));
+        if (!Array.isArray(entries)) entries = [];
+      }
+    } catch {
+      entries = [];
+    }
+
+    const timestamp = new Date().toISOString();
+    for (const e of events) {
+      entries.push({
+        symbol: e.symbol,
+        file: e.file || '',
+        type: e.type,
+        timestamp,
+        session: process.pid
+      });
+    }
+
+    if (entries.length > MAX_ENTRIES) {
+      entries = entries.slice(entries.length - MAX_ENTRIES);
+    }
+
+    try {
+      writeJsonAtomic(logPath, entries);
+    } catch {
+      // Fail silently — tracking is non-critical
+    }
+  });
 }
 
 /**
