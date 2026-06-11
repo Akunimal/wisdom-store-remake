@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-06-11
+
+Phase 1 of the v2 roadmap — kill stale-registry false positives, and extend symbol extraction to every common language.
+
+### Added
+- **`watch_project` tool — background registry freshness** (`tools/watch-project.js`, `lib/watcher.js`): starts a debounced file watcher over the project's source dirs and runs an incremental rescan whenever a code file changes. While active, `check_symbols` never reports a legitimately-new symbol as "unknown" because the registry was stale, and `refresh_symbols` is no longer needed. Portable (no reliance on `fs.watch` recursive mode), skips `node_modules`/build/VCS dirs, and starts watching new subdirectories as they appear. Pass `enable:false` to stop.
+- **Symbol extraction for 8 more languages** (`lib/indexer.js`): Java, C#, Scala, Kotlin, Swift, Ruby, PHP, and C/C++ now extract functions/methods and classes/structs/interfaces/enums via dependency-free regex extractors. Combined with the existing JS/TS AST and Python/Go/Rust support, the registry now covers every common language out of the box — no native modules, no ABI/WASM fragility.
+
+### Notes
+- A WASM tree-sitter tier (web-tree-sitter + tree-sitter-wasms) was evaluated and **rejected** for now: the published grammar/runtime versions hit ABI mismatches on current Node (the WASM form of the native prebuild hell). The regex extractors deliver universal language coverage without that fragility or the ~50 MB grammar payload, preserving the "zero network, zero native ABI" property.
+
 ## [0.10.4] - 2026-06-11
 
 Second pass of the flow-and-bug audit — remaining low-severity findings and cleanup.

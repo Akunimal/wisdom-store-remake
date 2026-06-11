@@ -119,15 +119,16 @@ This script will:
 
 ---
 
-## 🧰 MCP Tools (8 focused tools)
+## 🧰 MCP Tools (9 focused tools)
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
 | `detect_environment` | Detects OS, shell, WSL/Git Bash/native toolchains, package managers, and quoting rules. Returns the full JSON diagnostic by default; pass `compact: true` for a concise text summary (~250 tokens) | At the start of a session or when in doubt about command compatibility (especially on Windows) |
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
+| `watch_project` | **NEW (v0.11.0)**: Starts a background watcher that keeps the registry fresh automatically as files change. While active, `check_symbols` never reports stale-registry false positives and `refresh_symbols` is unnecessary | Start of a long editing session — set it and forget it |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
 | `check_symbols` | Cross-references symbols against registry with **confidence scoring** (0-100%). Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌. Flags repeat offenders across sessions | After writing new code |
-| `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) |
+| `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) and `watch_project` is not active |
 | `compress_output` | **Prefer over native shell execution** for git, npm, cargo, pip, make, tsc, eslint. Returns token-optimized output (saves 60-90% context). **Auto-redacts** secrets. Groups similar lines | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
 | `get_hallucination_report` | **NEW (v0.8.0)**: Shows frequently hallucinated symbols, recent events, and breakdown by type across sessions | End-of-session review, onboarding a new agent, or analyzing recurring hallucination patterns |
 | `get_compression_stats` | **NEW (v0.8.0)**: Session-level compression analytics — total tokens saved, breakdown by category, top individual wins | Understanding the value of `compress_output`, optimizing token usage |
@@ -295,7 +296,7 @@ Everything is plain text files in a `.wisdom/` directory at the project root:
 
 ### AST Extraction
 
-Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Dynamic Polyglot AST extraction for Python, Go, and Rust via optional dependencies, with regex fallbacks.
+Uses `@ast-grep/napi` (tree-sitter based) for JavaScript/TypeScript/TSX. Dynamic Polyglot AST extraction for Python, Go, and Rust via optional dependencies, with regex fallbacks. Regex-based symbol extraction also covers **Java, C#, Scala, Kotlin, Swift, Ruby, PHP, and C/C++** out of the box (no native dependencies) — symbol-existence checking across every common language.
 
 ### Language Support
 
@@ -494,15 +495,16 @@ Este script:
 
 ---
 
-## 🧰 Tools MCP (8 tools enfocadas)
+## 🧰 Tools MCP (9 tools enfocadas)
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
 | `detect_environment` | Detecta OS, shell, WSL/Git Bash/toolchains nativas, package managers y reglas de quoting. Retorna el JSON completo por defecto; pasá `compact: true` para un resumen de texto conciso (~250 tokens) | Al inicio de una sesión o cuando tengas dudas sobre compatibilidad de comandos (especialmente en Windows) |
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
+| `watch_project` | **NUEVO (v0.11.0)**: Inicia un watcher en segundo plano que mantiene el registro fresco automáticamente al cambiar archivos. Mientras está activo, `check_symbols` nunca reporta falsos positivos por registro stale y `refresh_symbols` es innecesario | Inicio de una sesión de edición larga — activalo y olvidate |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
 | `check_symbols` | Cruza símbolos contra el registro con **scoring de confianza** (0-100%). Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌. Marca reincidentes entre sesiones | Después de escribir código nuevo |
-| `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) |
+| `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) y `watch_project` no está activo |
 | `compress_output` | **Preferir sobre ejecución nativa de shell** para git, npm, cargo, pip, make, tsc, eslint. Retorna output optimizado (ahorra 60-90% de contexto). **Auto-redacta** secretos. Agrupa líneas similares | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
 | `get_hallucination_report` | **NUEVO (v0.8.0)**: Muestra símbolos frecuentemente alucinados, eventos recientes y desglose por tipo entre sesiones | Revisión de fin de sesión, onboarding de un nuevo agente, o análisis de patrones de alucinación recurrentes |
 | `get_compression_stats` | **NUEVO (v0.8.0)**: Analítica de compresión a nivel de sesión — total de tokens ahorrados, desglose por categoría, mejores ahorros individuales | Entender el valor de `compress_output`, optimizar uso de tokens |
@@ -650,7 +652,7 @@ Todo son archivos planos en un directorio `.wisdom/` en la raíz del proyecto:
 
 ### Extracción AST
 
-Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Extracción Dinámica Políglota AST para Python, Go y Rust vía dependencias opcionales (con fallback a regex).
+Usa `@ast-grep/napi` (basado en tree-sitter) para JavaScript/TypeScript/TSX. Extracción Dinámica Políglota AST para Python, Go y Rust vía dependencias opcionales (con fallback a regex). La extracción por regex también cubre **Java, C#, Scala, Kotlin, Swift, Ruby, PHP y C/C++** sin dependencias nativas — verificación de existencia de símbolos en todos los lenguajes comunes.
 
 ### Soporte de lenguajes
 

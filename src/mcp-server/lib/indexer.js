@@ -69,7 +69,26 @@ const LANG_MAP = {
   '.yml': { lang: null, name: 'yaml' },
   '.json': { lang: null, name: 'json' },
   '.md': { lang: null, name: 'markdown' },
+  // Regex-extracted languages (no AST grammar bundled — symbol-existence only)
+  '.java': { lang: null, name: 'java' },
+  '.cs': { lang: null, name: 'csharp' },
+  '.rb': { lang: null, name: 'ruby' },
+  '.php': { lang: null, name: 'php' },
+  '.kt': { lang: null, name: 'kotlin' },
+  '.kts': { lang: null, name: 'kotlin' },
+  '.swift': { lang: null, name: 'swift' },
+  '.c': { lang: null, name: 'c' },
+  '.h': { lang: null, name: 'c' },
+  '.cpp': { lang: null, name: 'cpp' },
+  '.cc': { lang: null, name: 'cpp' },
+  '.cxx': { lang: null, name: 'cpp' },
+  '.hpp': { lang: null, name: 'cpp' },
+  '.scala': { lang: null, name: 'scala' },
 };
+
+// Extensions the scanner extracts symbols from — used by the file watcher to
+// decide which change events warrant an incremental rescan.
+export const CODE_EXTENSIONS = new Set(Object.keys(LANG_MAP));
 
 function emptySymbols() {
   return {
@@ -710,6 +729,148 @@ function extractWithRegex(filePath, lines, lang, symbols, lineOffset = 0) {
     case 'yaml':
       extractYaml(filePath, lines.join('\n'), symbols);
       break;
+    case 'java':
+    case 'csharp':
+    case 'scala':
+      extractCFamilyOop(filePath, lines, symbols);
+      break;
+    case 'kotlin':
+      extractKotlin(filePath, lines, symbols);
+      break;
+    case 'swift':
+      extractSwift(filePath, lines, symbols);
+      break;
+    case 'ruby':
+      extractRuby(filePath, lines, symbols);
+      break;
+    case 'php':
+      extractPhp(filePath, lines, symbols);
+      break;
+    case 'c':
+    case 'cpp':
+      extractCLike(filePath, lines, symbols);
+      break;
+  }
+}
+
+// Keywords that look like `name(...)` calls but are control flow, not symbols.
+const C_FAMILY_KEYWORDS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'return', 'sizeof', 'do', 'else',
+  'synchronized', 'throw', 'throws', 'new', 'super', 'this', 'using', 'lock',
+  'foreach', 'await', 'yield', 'when', 'match', 'guard', 'defer', 'repeat',
+]);
+
+/**
+ * Java / C# / Scala: classes, interfaces, enums, records, and methods.
+ * Conservative — methods must carry a visibility/modifier keyword to avoid
+ * matching arbitrary `foo()` calls.
+ */
+function extractCFamilyOop(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    const typeDecl = line.match(/\b(?:class|interface|enum|record|struct|trait|object)\s+([A-Za-z_]\w*)/);
+    if (typeDecl) { addSymbol(symbols.classes, typeDecl[1], filePath, lineNum); continue; }
+
+    // namespace / package members (C#)
+    const nsDecl = line.match(/\bnamespace\s+([A-Za-z_][\w.]*)/);
+    if (nsDecl) { addSymbol(symbols.variables, nsDecl[1], filePath, lineNum); continue; }
+
+    // Methods: one or more leading modifiers, an optional return type, then
+    // name(. Requiring ≥1 modifier keyword keeps arbitrary `foo()` calls out;
+    // the name may be PascalCase (C#) or camelCase (Java/Scala).
+    const methodDecl = line.match(/^\s*(?:(?:public|private|protected|internal|static|final|override|virtual|abstract|async|sealed|unsafe|extern|partial|suspend|open|inline|def|fun)\s+)+(?:[\w<>[\],?.]+\s+)?([A-Za-z_]\w*)\s*\(/);
+    if (methodDecl && !C_FAMILY_KEYWORDS.has(methodDecl[1])) {
+      addSymbol(symbols.functions, methodDecl[1], filePath, lineNum);
+    }
+  }
+}
+
+/**
+ * Kotlin: fun, class/interface/object/enum, top-level val/var.
+ */
+function extractKotlin(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    const funDecl = line.match(/\bfun\s+(?:<[^>]+>\s+)?(?:[\w.]+\.)?([a-z_]\w*)\s*\(/i);
+    if (funDecl) { addSymbol(symbols.functions, funDecl[1], filePath, lineNum); continue; }
+
+    const typeDecl = line.match(/\b(?:class|interface|object|enum\s+class|data\s+class|sealed\s+class)\s+([A-Za-z_]\w*)/);
+    if (typeDecl) { addSymbol(symbols.classes, typeDecl[1], filePath, lineNum); continue; }
+  }
+}
+
+/**
+ * Swift: func, class/struct/enum/protocol/extension/actor.
+ */
+function extractSwift(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    const funcDecl = line.match(/\bfunc\s+([a-z_]\w*)\s*[(<]/i);
+    if (funcDecl) { addSymbol(symbols.functions, funcDecl[1], filePath, lineNum); continue; }
+
+    const typeDecl = line.match(/\b(?:class|struct|enum|protocol|actor)\s+([A-Za-z_]\w*)/);
+    if (typeDecl) { addSymbol(symbols.classes, typeDecl[1], filePath, lineNum); continue; }
+  }
+}
+
+/**
+ * Ruby: def, class, module.
+ */
+function extractRuby(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const lineNum = i + 1;
+
+    const defDecl = line.match(/^def\s+(?:self\.)?([a-z_]\w*[?!=]?)/);
+    if (defDecl) { addSymbol(symbols.functions, defDecl[1], filePath, lineNum); continue; }
+
+    const classDecl = line.match(/^(?:class|module)\s+([A-Z]\w*)/);
+    if (classDecl) { addSymbol(symbols.classes, classDecl[1], filePath, lineNum); continue; }
+  }
+}
+
+/**
+ * PHP: function, class, interface, trait.
+ */
+function extractPhp(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    const funcDecl = line.match(/\bfunction\s+&?\s*([a-zA-Z_]\w*)\s*\(/);
+    if (funcDecl) { addSymbol(symbols.functions, funcDecl[1], filePath, lineNum); continue; }
+
+    const typeDecl = line.match(/\b(?:class|interface|trait|enum)\s+([A-Za-z_]\w*)/);
+    if (typeDecl) { addSymbol(symbols.classes, typeDecl[1], filePath, lineNum); continue; }
+  }
+}
+
+/**
+ * C / C++: function definitions, struct/class/enum/union, typedefs.
+ * Function detection is conservative: a return type, a name, a parenthesized
+ * arg list, and an opening brace (definition, not a call or prototype).
+ */
+function extractCLike(filePath, lines, symbols) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    const typeDecl = line.match(/\b(?:struct|class|enum|union)\s+([A-Za-z_]\w*)/);
+    if (typeDecl) { addSymbol(symbols.classes, typeDecl[1], filePath, lineNum); continue; }
+
+    // ret-type name(args) {   — a definition opening at column 0 (skips
+    // indented call sites and prototypes ending in `;`). Accepts an empty
+    // single-line body `{}` as well as an opening `{`.
+    const funcDef = line.match(/^[A-Za-z_][\w\s*&:<>,]*?\b([A-Za-z_]\w*)\s*\([^;{]*\)\s*(?:const\s*)?\{\s*\}?\s*$/);
+    if (funcDef && !C_FAMILY_KEYWORDS.has(funcDef[1])) {
+      addSymbol(symbols.functions, funcDef[1], filePath, lineNum);
+    }
   }
 }
 

@@ -80,12 +80,13 @@ Todos los tests dependían de librerías eliminadas:
 
 ## ✅ Qué fue mantenido
 
-### Tools actuales (8)
+### Tools actuales (9)
 
 | Tool | Propósito | Estado |
 |------|-----------|--------|
-| `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes. **Modo compacto** por defecto (~250 tokens vs ~1,500 tokens) | ✅ Companion |
+| `detect_environment` | Detecta OS/shell/package managers y devuelve reglas anti-errores para agentes. **Modo compacto** opcional (~250 tokens vs ~1,500 tokens) | ✅ Companion |
 | `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json`. **Indexado incremental** (cache por mtime+size); `force: true` reparsea todo | ✅ Core |
+| `watch_project` | Watcher en segundo plano: rescan incremental al cambiar archivos, mantiene el registry fresco sin `refresh_symbols` (v0.11.0) | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
 | `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados con **confidence scoring** y **watchlist** | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |

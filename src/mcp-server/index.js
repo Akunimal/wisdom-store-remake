@@ -42,6 +42,7 @@ import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
 import { handleDetectEnvironment } from './tools/detect-environment.js';
 import { compressOutputDefinition, compressOutputHandler } from './tools/compress-output.js';
+import { watchProjectDefinition, handleWatchProject } from './tools/watch-project.js';
 import { hallucinationReportDefinition, handleHallucinationReport } from './tools/get-hallucination-report.js';
 import { compressionStatsDefinition, handleCompressionStats } from './tools/get-compression-stats.js';
 
@@ -66,7 +67,7 @@ function parseDisabledTools(value) {
 }
 
 const server = new Server(
-  { name: 'wisdom-store', version: '0.10.4' },
+  { name: 'wisdom-store', version: '0.11.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -186,6 +187,7 @@ const TOOLS = [
     }
   },
   compressOutputDefinition,
+  watchProjectDefinition,
   hallucinationReportDefinition,
   compressionStatsDefinition
 ];
@@ -221,6 +223,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await handleRefreshSymbols(args);
       case 'compress_output':
         return await compressOutputHandler(args);
+      case 'watch_project':
+        return await handleWatchProject(args);
       case 'get_hallucination_report':
         return await handleHallucinationReport(args);
       case 'get_compression_stats':
