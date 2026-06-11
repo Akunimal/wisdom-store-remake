@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-06-11
+
+Phase 2 of the v2 roadmap — go beyond "does this symbol exist" toward "is it being used correctly," and prevent hallucinations before they're written.
+
+### Added
+- **`get_file_skeleton` tool** (`tools/get-file-skeleton.js`): returns a file's function/method signatures, class/interface/type names, and exports with all bodies stripped — typically 85-95% fewer tokens than reading the file. For JS/TS it uses the AST to emit real signatures (parameter names, arity, TS return types); for other languages it emits declaration lines. The point is *preventive*: the agent sees the true shape of a function before calling it, instead of inventing arguments. Works on a single file with no registry.
+- **Export resolution in the post-write hook** (`symbol-check.mjs`): `import { foo } from './utils'` is now checked against what `./utils` actually exports. A symbol the target module *defines but never exports* is flagged — a real bug the existing path-existence check could not catch. Conservative by design: skips wildcard re-exports (`export *`) and modules whose exports can't be positively parsed, so a false positive never fires where the tool is unsure.
+- **Session-defined symbols ledger** (`symbol-check.mjs`, `.wisdom/session-defs.json`): symbols you defined earlier in the session (in any file) are remembered and no longer flagged as hallucinated when referenced from another file before the registry catches up — the single most common false positive. Recorded before any early exit, so it works even against a stale or empty registry. Suppress-only: it never adds a warning.
+
+### Notes
+- Function-signature **arity validation** (flagging call sites that pass the wrong number of arguments) was deliberately deferred. Naive arity checking is a heavy false-positive source (defaults, rest/optional params, overloads, ambiguous method resolution), which would add exactly the noise this project works to remove. The signature information is instead surfaced proactively through `get_file_skeleton`, where it prevents the mistake without guessing.
+
 ## [0.11.0] - 2026-06-11
 
 Phase 1 of the v2 roadmap — kill stale-registry false positives, and extend symbol extraction to every common language.

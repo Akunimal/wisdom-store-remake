@@ -80,7 +80,7 @@ Todos los tests dependían de librerías eliminadas:
 
 ## ✅ Qué fue mantenido
 
-### Tools actuales (9)
+### Tools actuales (10)
 
 | Tool | Propósito | Estado |
 |------|-----------|--------|
@@ -88,6 +88,7 @@ Todos los tests dependían de librerías eliminadas:
 | `reindex_project` | Extrae símbolos vía AST, guarda en `.wisdom/symbols.json`. **Indexado incremental** (cache por mtime+size); `force: true` reparsea todo | ✅ Core |
 | `watch_project` | Watcher en segundo plano: rescan incremental al cambiar archivos, mantiene el registry fresco sin `refresh_symbols` (v0.11.0) | ✅ Core |
 | `get_project_overview` | Snapshot compacto del proyecto | ✅ Core |
+| `get_file_skeleton` | Firmas/clases/exports de un archivo sin cuerpos (~85-95% menos tokens). Preventivo: el agente ve firmas reales antes de llamar (v0.12.0) | ✅ Core |
 | `check_symbols` | **Anti-alucinación**: detecta símbolos hallucinados con **confidence scoring** y **watchlist** | ✅ CORE |
 | `refresh_symbols` | Actualiza el registry post-cambios | ✅ Core |
 | `compress_output` | Ejecuta comandos y comprime output. **Auto-redacta secretos**. **Agrupa líneas similares** (v0.8.1) | ⚠️ Companion con superficie de ejecución |

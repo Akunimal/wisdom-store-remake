@@ -110,6 +110,31 @@ if (!registry || typeof registry !== 'object') {
   process.exit(0);
 }
 
+// --- Session-defined symbols ledger (F5) ---
+// Record the symbols defined in this file BEFORE any early exit, so a stale or
+// empty registry (the exact case this guards against) still accumulates the
+// ledger for later invocations. The ledger is consulted in the unknowns loop
+// to suppress symbols the agent defined elsewhere this session.
+const SESSION_DEFS_FILE = path.join(path.dirname(symbolsFile), 'session-defs.json');
+const SESSION_DEFS_CAP = 2000;
+const sessionDefs = new Set();
+try {
+  if (fs.existsSync(SESSION_DEFS_FILE)) {
+    const arr = JSON.parse(fs.readFileSync(SESSION_DEFS_FILE, 'utf8'));
+    if (Array.isArray(arr)) for (const n of arr) sessionDefs.add(n);
+  }
+} catch { /* corrupt ledger — start fresh */ }
+
+(function recordSessionDefs() {
+  const before = sessionDefs.size;
+  for (const m of content.matchAll(/(?:function\*?\s+|class\s+)([A-Za-z_$][\w$]*)/g)) sessionDefs.add(m[1]);
+  for (const m of content.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g)) sessionDefs.add(m[1]);
+  if (sessionDefs.size === before) return;
+  let names = [...sessionDefs];
+  if (names.length > SESSION_DEFS_CAP) names = names.slice(names.length - SESSION_DEFS_CAP);
+  try { writeFileAtomic(SESSION_DEFS_FILE, JSON.stringify(names)); } catch { /* best-effort */ }
+})();
+
 // Build set of all known symbols
 const known = new Set();
 for (const [cat, symbols] of Object.entries(registry)) {
@@ -347,6 +372,83 @@ for (const importPath of localPaths) {
   }
 }
 
+// --- Imported symbol must be EXPORTED by the resolved module (F4) ---
+// Catches `import { foo } from './utils'` where ./utils exists and defines foo
+// but never exports it — a real, hard-to-spot bug the path check alone misses.
+
+function resolveLocalModule(importPath) {
+  const resolved = path.resolve(fileDir, importPath);
+  const candidates = [resolved];
+  if (!path.extname(resolved)) {
+    candidates.push(resolved + '.js', resolved + '.mjs', resolved + '.ts', resolved + '.tsx',
+      resolved + '.jsx', resolved + '.cjs', resolved + '/index.js', resolved + '/index.ts', resolved + '/index.mjs');
+  }
+  for (const c of candidates) {
+    try { if (fs.statSync(c).isFile()) return c; } catch { /* not this one */ }
+  }
+  return null;
+}
+
+function moduleExports(modPath) {
+  let src;
+  try { src = fs.readFileSync(modPath, 'utf8'); } catch { return null; }
+  const names = new Set();
+  let hasStar = false;
+  for (const m of src.matchAll(/export\s+(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|enum|interface|type)\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1]);
+  for (const m of src.matchAll(/export\s*\{([^}]*)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const seg = part.trim().split(/\s+as\s+/);
+      const exported = (seg[1] || seg[0]).trim().replace(/^type\s+/, '');
+      if (/^[A-Za-z_$][\w$]*$/.test(exported)) names.add(exported);
+    }
+  }
+  if (/export\s*\*/.test(src)) hasStar = true; // re-export — can't enumerate
+  for (const m of src.matchAll(/(?:module\.)?exports\.([A-Za-z_$][\w$]*)\s*=/g)) names.add(m[1]);
+  for (const m of src.matchAll(/module\.exports\s*=\s*\{([^}]*)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const k = part.trim().split(/[:\s]/)[0].trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(k)) names.add(k);
+    }
+  }
+  return { names, hasStar };
+}
+
+const notExported = [];
+const namedImportSites = []; // { name, importPath }
+// Named ES imports (skip `import type` and namespace imports).
+for (const m of scanContent.matchAll(/import\s+([^'";]+?)\s+from\s*['"](\.[^'"]+)['"]/g)) {
+  if (/^\s*type\s/.test(m[1])) continue;
+  const named = m[1].match(/\{([^}]+)\}/);
+  if (!named) continue;
+  for (const spec of named[1].split(',')) {
+    if (/^\s*type\s/.test(spec)) continue;
+    const original = spec.trim().split(/\s+as\s+/)[0].trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(original)) namedImportSites.push({ name: original, importPath: m[2] });
+  }
+}
+// CommonJS named requires.
+for (const m of scanContent.matchAll(/(?:const|let|var)\s*\{([^}]+)\}\s*=\s*require\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+  for (const spec of m[1].split(',')) {
+    const original = spec.trim().split(/\s*:\s*/)[0].trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(original)) namedImportSites.push({ name: original, importPath: m[2] });
+  }
+}
+
+const exportsCache = new Map();
+for (const site of namedImportSites) {
+  const modPath = resolveLocalModule(site.importPath);
+  if (!modPath) continue; // unresolved path already reported as badPath
+  if (!exportsCache.has(modPath)) exportsCache.set(modPath, moduleExports(modPath));
+  const exp = exportsCache.get(modPath);
+  // Conservative: only flag when we positively parsed exports and saw no
+  // wildcard re-export — otherwise we might be wrong, and a false positive
+  // here is worse than a miss.
+  if (!exp || exp.hasStar || exp.names.size === 0) continue;
+  if (!exp.names.has(site.name)) {
+    notExported.push({ name: site.name, importPath: site.importPath });
+  }
+}
+
 // --- Function calls (checked against stripped scanContent) ---
 
 const stripped = stripCommentsAndStrings(scanContent);
@@ -473,6 +575,7 @@ for (const name of referenced) {
   if (name.length <= 2) continue;
   if (/^[A-Z_]+$/.test(name)) continue; // CONSTANTS
   if (importedBindings.has(name)) continue;
+  if (sessionDefs.has(name)) continue; // defined elsewhere this session (F5)
 
   // Is it a local definition in this file? (check full file, not just diff)
   const escapedName = escapeRegExp(name);
@@ -629,6 +732,14 @@ if (badPaths.length > 0) {
   for (const p of badPaths) {
     warnings.push(`  - ${p}`);
   }
+}
+
+if (notExported.length > 0) {
+  warnings.push(`Export check: ${notExported.length} import(s) name a symbol the target module does not export in ${fileName}${mode}:`);
+  for (const e of notExported.slice(0, 10)) {
+    warnings.push(`  - '${e.name}' is not exported by '${e.importPath}' — check the export, or it may be a default/namespace import.`);
+  }
+  if (notExported.length > 10) warnings.push(`  ... and ${notExported.length - 10} more`);
 }
 
 if (unknowns.length > 0) {

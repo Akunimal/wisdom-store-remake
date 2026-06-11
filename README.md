@@ -119,7 +119,7 @@ This script will:
 
 ---
 
-## 🧰 MCP Tools (9 focused tools)
+## 🧰 MCP Tools (10 focused tools)
 
 | Tool | Description | When to use |
 |------|-------------|-------------|
@@ -127,6 +127,7 @@ This script will:
 | `reindex_project` | Scans project, extracts symbols via AST, saves to `.wisdom/symbols.json` | Project start or after major changes |
 | `watch_project` | **NEW (v0.11.0)**: Starts a background watcher that keeps the registry fresh automatically as files change. While active, `check_symbols` never reports stale-registry false positives and `refresh_symbols` is unnecessary | Start of a long editing session — set it and forget it |
 | `get_project_overview` | Compact project map — file tree, symbols, API routes, HTML pages | First step in a new task |
+| `get_file_skeleton` | **NEW (v0.12.0)**: Returns a file's function/method signatures, class/type names, and exports with bodies stripped (~85-95% fewer tokens than reading it). You see the *real* parameter names, arity, and return types | **Before** writing code that calls into a file — prevents inventing arguments or misremembering signatures |
 | `check_symbols` | Cross-references symbols against registry with **confidence scoring** (0-100%). Reports: confirmed ✅, fuzzy match ⚠️ (typo?), or unknown ❌. Flags repeat offenders across sessions | After writing new code |
 | `refresh_symbols` | Re-scans and updates symbol registry | When `check_symbols` reports legitimate unknowns (new symbols) and `watch_project` is not active |
 | `compress_output` | **Prefer over native shell execution** for git, npm, cargo, pip, make, tsc, eslint. Returns token-optimized output (saves 60-90% context). **Auto-redacts** secrets. Groups similar lines | When running tests, builds, git status, or listing files. Treat as local command execution, not read-only analysis |
@@ -224,8 +225,11 @@ Automatically checks hallucinations after each Write/Edit:
 
 - ❌ Import paths pointing to non-existent files
 - ❌ Imported symbols not found in project registry
+- ❌ **Imported symbols that the target module defines but never exports** (v0.12.0)
 - ❌ Standalone function calls to unknown symbols
 - ❌ API routes not found in project index
+
+Symbols you defined earlier in the same session (in any file) are remembered in a small ledger (`.wisdom/session-defs.json`) and are **not** flagged as hallucinated even if the registry hasn't caught up yet (v0.12.0).
 
 **Requires** `.wisdom/symbols.json` — run `get_project_overview` or `reindex_project` once to generate it.
 
@@ -495,7 +499,7 @@ Este script:
 
 ---
 
-## 🧰 Tools MCP (9 tools enfocadas)
+## 🧰 Tools MCP (10 tools enfocadas)
 
 | Tool | Descripción | Cuándo usar |
 |------|-------------|-------------|
@@ -503,6 +507,7 @@ Este script:
 | `reindex_project` | Escanea el proyecto, extrae símbolos vía AST, guarda en `.wisdom/symbols.json` | Inicio del proyecto o después de cambios mayores |
 | `watch_project` | **NUEVO (v0.11.0)**: Inicia un watcher en segundo plano que mantiene el registro fresco automáticamente al cambiar archivos. Mientras está activo, `check_symbols` nunca reporta falsos positivos por registro stale y `refresh_symbols` es innecesario | Inicio de una sesión de edición larga — activalo y olvidate |
 | `get_project_overview` | Mapa compacto del proyecto — árbol de archivos, símbolos, rutas API, páginas HTML | Primer paso en una nueva tarea |
+| `get_file_skeleton` | **NUEVO (v0.12.0)**: Retorna las firmas de funciones/métodos, nombres de clases/tipos y exports de un archivo sin los cuerpos (~85-95% menos tokens que leerlo). Ves los nombres de parámetros, aridad y tipos de retorno *reales* | **Antes** de escribir código que llama a un archivo — evita inventar argumentos o equivocarte de firma |
 | `check_symbols` | Cruza símbolos contra el registro con **scoring de confianza** (0-100%). Reporta: confirmados ✅, fuzzy match ⚠️ (typo?), o desconocidos ❌. Marca reincidentes entre sesiones | Después de escribir código nuevo |
 | `refresh_symbols` | Re-escanea y actualiza el registro de símbolos | Cuando `check_symbols` reporta unknowns legítimos (símbolos nuevos) y `watch_project` no está activo |
 | `compress_output` | **Preferir sobre ejecución nativa de shell** para git, npm, cargo, pip, make, tsc, eslint. Retorna output optimizado (ahorra 60-90% de contexto). **Auto-redacta** secretos. Agrupa líneas similares | Al correr tests, builds, git status, o listar archivos. Trátalo como ejecución local de comandos, no como análisis read-only |
