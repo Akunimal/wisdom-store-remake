@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-06-10
+
+### Added
+- **Incremental indexing**: `scanProject` caches per-file symbols in `.wisdom/scan-cache.json` (keyed by mtime + size) and reuses them for unchanged files on the next scan. `reindex_project`/`refresh_symbols` accept `force: true` to bypass the cache. The cache is only written when `.wisdom/` already exists, so read-only scans (e.g. `get_project_overview`) never create directories.
+- **Multi-location symbol tracking**: a symbol name defined in several files now records up to 5 definition sites in a `locations` array instead of silently keeping only the first. `check_symbols` annotates fuzzy suggestions with `[defined in N files]`.
+- **Configurable skip dirs**: `.wisdom/config.json` supports `skipDirs` / `includeDirs` (also available as scan options). Default skips like `data/`, `content/`, `public/` can now be overridden; tooling dirs (`node_modules`, `.git`, `dist`, …) remain non-overridable.
+- **Truncation reporting**: scans hitting `max_files` now return `truncated: true` and `reindex_project` warns that the registry is incomplete.
+- **ESLint**: flat config + `npm run lint` + CI lint job. All 17 pre-existing findings fixed (unused variables, useless escapes).
+- Test suite for the indexer (`test/indexer.test.js`, 17 tests).
+
+### Changed
+- **Fuzzy matching is length-aware**: 1-2 char symbols never fuzzy-match, 3-4 char symbols allow edit distance 1 only. Previously a 3-char query with distance 2 matched almost anything in the registry, producing noisy "did you mean" suggestions.
+- `migrations/` and project-specific directory names (`Website/`) are no longer skipped by default — skipping `migrations/` contradicted the declared SQL support.
+- `.gitignore` parsing honors negated entries (`!dir`).
+- Levenshtein uses a two-row buffer instead of a full matrix.
+
+### Fixed
+- **`symbols.json` writes are atomic** (temp file + rename): a process killed mid-write can no longer leave a corrupt registry that silently disables all symbol checking until a manual reindex.
+
 ## [0.9.1] - 2026-06-10
 
 ### Changed
