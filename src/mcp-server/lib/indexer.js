@@ -143,7 +143,7 @@ export function scanProject(projectRoot, options = {}) {
     projectRoot,
     maxDepth: options.maxDepth || 8,
     maxFiles: options.maxFiles || 2000,
-    files: [],
+    files: /** @type {Array<{ path: string, lang: string, lines: number, size: number, modified: string }>} */ ([]),
     symbols: emptySymbols(),
     skip,
     include,
@@ -151,6 +151,7 @@ export function scanProject(projectRoot, options = {}) {
     cache: cache?.files || {},
     newCache: { version: SCAN_CACHE_VERSION, files: {} },
     truncated: false,
+    depthTruncated: false,
     cacheHits: 0,
   };
 
@@ -162,6 +163,7 @@ export function scanProject(projectRoot, options = {}) {
     files: ctx.files,
     symbols: ctx.symbols,
     truncated: ctx.truncated,
+    depthTruncated: ctx.depthTruncated,
     cacheHits: ctx.cacheHits,
   };
 }
@@ -317,7 +319,10 @@ function mergeFileSymbols(globalSymbols, fileSymbols) {
 }
 
 function walkDir(dir, ctx, depth) {
-  if (depth > ctx.maxDepth) return;
+  if (depth > ctx.maxDepth) {
+    ctx.depthTruncated = true;
+    return;
+  }
   if (ctx.files.length >= ctx.maxFiles) return;
 
   let entries;

@@ -28,6 +28,8 @@ import {
   getWatchlist
 } from '../lib/hallucination-tracker.js';
 
+import { getWatcherHealth } from './watch-project.js';
+
 export async function handleCheckSymbols(args) {
   if (!args.symbols || !Array.isArray(args.symbols) || args.symbols.length === 0) {
     return {
@@ -63,6 +65,8 @@ export async function handleCheckSymbols(args) {
   // instead of trusting stale data. (Age-based only — comparing against
   // per-file mtimes would re-stat the whole tree on every check.)
   const staleNote = registryStalenessNote(_meta);
+  const incompleteNote = registryIncompleteNote(_meta);
+  const watcherHealth = getWatcherHealth(projectRoot);
 
   // Load watchlist for repeat-offender annotations
   let watchlist;
@@ -72,6 +76,7 @@ export async function handleCheckSymbols(args) {
     watchlist = new Map();
   }
 
+  /** @type {string[]} */
   const lines = [];
 
   // Only report issues (context-efficient)
@@ -113,6 +118,17 @@ export async function handleCheckSymbols(args) {
   if (staleNote && result.unknown.length > 0) {
     lines.push(staleNote);
   }
+  if (incompleteNote && result.unknown.length > 0) {
+    lines.push(incompleteNote);
+  }
+
+  if (watcherHealth?.lastError || watcherHealth?.recoveryPending) {
+    const pending = watcherHealth.recoveryPending ? ' Auto-heal retry pending.' : '';
+    lines.push(`WARNING: Project watcher is unhealthy: ${watcherHealth.lastError || 'recovery pending'}.${pending}`);
+  }
+  if (watcherHealth?.lastWarning) {
+    lines.push(`WARNING: Project watcher is degraded: ${watcherHealth.lastWarning}.`);
+  }
 
   // Optionally include known symbols if verbose
   if (args.verbose && result.known.length > 0) {
@@ -145,6 +161,8 @@ export async function handleCheckSymbols(args) {
       status,
       overallConfidence: result.overallConfidence,
       stale: !!staleNote,
+      incomplete: !!incompleteNote,
+      watcherHealth,
       known: result.known.map((k) => ({ name: k.name, category: k.category, file: k.file, line: k.line, established: !!k.established })),
       fuzzy: result.fuzzy.map((f) => ({ queried: f.queried, suggestion: f.suggestion, confidence: f.confidence, category: f.category, file: f.file, line: f.line })),
       unknown: result.unknown.map((u) => u.name)
@@ -172,4 +190,14 @@ function registryStalenessNote(meta) {
   const ageDays = (Date.now() - scannedMs) / (1000 * 60 * 60 * 24);
   if (ageDays < STALENESS_DAYS) return null;
   return `ℹ️ Registry last scanned ${Math.floor(ageDays)} days ago — new symbols may be wrongly flagged as unknown. Run \`refresh_symbols\` to update it.`;
+}
+
+function registryIncompleteNote(meta) {
+  if (!meta?.incomplete && !meta?.truncated && !meta?.depth_truncated) return null;
+  /** @type {string[]} */
+  const reasons = [];
+  if (meta.truncated) reasons.push(`file limit reached${meta.max_files ? ` (${meta.max_files})` : ''}`);
+  if (meta.depth_truncated) reasons.push(`depth limit reached${meta.max_depth ? ` (${meta.max_depth})` : ''}`);
+  const detail = reasons.length ? `: ${reasons.join('; ')}` : '';
+  return `WARNING: Registry is incomplete${detail}. Unknown symbols may be false positives; reindex with higher limits.`;
 }

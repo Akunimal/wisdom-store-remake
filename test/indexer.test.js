@@ -103,6 +103,13 @@ describe('scan truncation', () => {
     const scan = scanProject(root, { incremental: false });
     assert.equal(scan.truncated, false);
   });
+
+  it('sets depthTruncated when maxDepth skips a nested directory', () => {
+    const root = makeProject({ 'src/deep/a.js': 'function a(){}\n' });
+    const scan = scanProject(root, { maxDepth: 1, incremental: false });
+    assert.equal(scan.depthTruncated, true);
+    assert.equal(scan.symbols.functions.a, undefined);
+  });
 });
 
 describe('incremental scan cache', () => {

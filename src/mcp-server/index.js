@@ -260,6 +260,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
 // Start server
 const transport = new StdioServerTransport();
+const SHUTDOWN_GRACE_MS = 2000;
 let shuttingDown = false;
 
 function cleanupRuntime() {
@@ -271,8 +272,22 @@ async function shutdown(exitCode) {
   if (shuttingDown) return;
   shuttingDown = true;
   cleanupRuntime();
-  try { await server.close(); } catch { /* best-effort shutdown */ }
-  if (exitCode !== undefined) process.exit(exitCode);
+
+  let timer;
+  try {
+    const closed = await Promise.race([
+      Promise.resolve().then(() => server.close()).then(() => true),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), SHUTDOWN_GRACE_MS);
+      })
+    ]);
+    if (!closed) {
+      console.error(`WARNING: MCP server close exceeded ${SHUTDOWN_GRACE_MS}ms; forcing process exit.`);
+    }
+  } catch { /* best-effort shutdown */ }
+  finally { clearTimeout(timer); }
+
+  process.exit(exitCode ?? 0);
 }
 
 transport.onclose = cleanupRuntime;

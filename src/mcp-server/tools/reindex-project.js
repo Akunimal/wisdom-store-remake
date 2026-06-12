@@ -40,7 +40,12 @@ export async function handleReindexProject(args) {
       project: projectRoot,
       scanned: new Date().toISOString(),
       elapsed_ms: elapsed,
-      file_count: result.files.length
+      file_count: result.files.length,
+      incomplete: result.truncated || result.depthTruncated,
+      truncated: result.truncated,
+      depth_truncated: result.depthTruncated,
+      max_files: options.maxFiles,
+      max_depth: options.maxDepth
     },
     ...result.symbols
   };
@@ -88,6 +93,10 @@ export async function handleReindexProject(args) {
   if (result.truncated) {
     summary.push('');
     summary.push(`⚠️ File limit reached (${options.maxFiles}) — scan truncated. Registry is incomplete; raise max_files to index everything.`);
+  }
+  if (result.depthTruncated) {
+    summary.push('');
+    summary.push(`⚠️ Depth limit reached (${options.maxDepth}) — scan truncated. Registry is incomplete; raise max_depth to index everything.`);
   }
 
   summary.push('');
