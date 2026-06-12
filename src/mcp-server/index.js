@@ -42,11 +42,12 @@ import { handleCheckSymbols } from './tools/check-symbols.js';
 import { handleRefreshSymbols } from './tools/refresh-symbols.js';
 import { handleDetectEnvironment } from './tools/detect-environment.js';
 import { compressOutputDefinition, compressOutputHandler } from './tools/compress-output.js';
-import { watchProjectDefinition, handleWatchProject } from './tools/watch-project.js';
+import { watchProjectDefinition, handleWatchProject, _stopAllWatchers } from './tools/watch-project.js';
 import { fileSkeletonDefinition, handleFileSkeleton } from './tools/get-file-skeleton.js';
 import { genAgentsContextDefinition, handleGenAgentsContext } from './tools/gen-agents-context.js';
 import { hallucinationReportDefinition, handleHallucinationReport } from './tools/get-hallucination-report.js';
 import { compressionStatsDefinition, handleCompressionStats } from './tools/get-compression-stats.js';
+import { terminateAllProcessTrees } from './lib/process-runner.js';
 
 function parseDisabledTools(value) {
   if (!value) {
@@ -209,7 +210,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: activeTools
 }));
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const { name, arguments: args } = request.params;
 
   try {
@@ -222,7 +223,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     switch (name) {
       case 'detect_environment':
-        return await handleDetectEnvironment(args);
+        return await handleDetectEnvironment(args, extra?.signal);
       case 'reindex_project':
         return await handleReindexProject(args);
       case 'get_project_overview':
@@ -232,7 +233,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'refresh_symbols':
         return await handleRefreshSymbols(args);
       case 'compress_output':
-        return await compressOutputHandler(args);
+        return await compressOutputHandler(args, extra?.signal);
       case 'watch_project':
         return await handleWatchProject(args);
       case 'get_file_skeleton':
@@ -259,4 +260,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Start server
 const transport = new StdioServerTransport();
+let shuttingDown = false;
+
+function cleanupRuntime() {
+  _stopAllWatchers();
+  terminateAllProcessTrees();
+}
+
+async function shutdown(exitCode) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  cleanupRuntime();
+  try { await server.close(); } catch { /* best-effort shutdown */ }
+  if (exitCode !== undefined) process.exit(exitCode);
+}
+
+transport.onclose = cleanupRuntime;
+process.stdin.once('end', () => { void shutdown(); });
+process.stdin.once('close', () => { void shutdown(); });
+process.once('SIGINT', () => { void shutdown(130); });
+process.once('SIGTERM', () => { void shutdown(143); });
+process.once('SIGHUP', () => { void shutdown(129); });
+process.once('exit', cleanupRuntime);
 await server.connect(transport);

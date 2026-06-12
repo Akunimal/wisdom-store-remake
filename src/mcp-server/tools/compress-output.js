@@ -6,11 +6,8 @@
  * and threshold-based compression passthrough.
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { compressOutput } from './token-compressor.js';
-
-const execAsync = promisify(exec);
+import { runShellCommand } from '../lib/process-runner.js';
 
 export const compressOutputDefinition = {
   name: "compress_output",
@@ -48,7 +45,7 @@ export const compressOutputDefinition = {
   }
 };
 
-export async function compressOutputHandler(args) {
+export async function compressOutputHandler(args, signal) {
   const { command, level = 'normal', maxTokens = 500, redact = true, timeoutMs = 120000 } = args;
 
   if (!command) {
@@ -56,14 +53,26 @@ export async function compressOutputHandler(args) {
   }
 
   try {
-    // Execute command. We capture both stdout and stderr.
-    // Use a large maxBuffer (50MB) to prevent truncation by Node.js before we can filter it.
-    // Timeout prevents interactive/never-ending commands from hanging the MCP call forever.
-    const { stdout, stderr } = await execAsync(command, {
+    // The shared runner owns the complete process tree so timeouts, aborts, and
+    // server shutdowns do not leave shell descendants running in the background.
+    const result = await runShellCommand(command, {
       maxBuffer: 1024 * 1024 * 50,
-      timeout: timeoutMs,
-      killSignal: 'SIGKILL'
+      timeoutMs,
+      signal
     });
+    const { stdout, stderr } = result;
+
+    if (!result.ok) {
+      const error = new Error(result.error || `Command exited with code ${result.status ?? 1}`);
+      error.code = result.status;
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.killed = result.killed;
+      error.timedOut = result.timedOut;
+      error.maxBufferExceeded = result.maxBufferExceeded;
+      error.aborted = result.aborted;
+      throw error;
+    }
     
     // Combine stdout and stderr.
     const rawOutput = stdout + (stderr ? '\n' + stderr : '');
@@ -110,12 +119,32 @@ export async function compressOutputHandler(args) {
   } catch (error) {
     // Timed out (interactive prompt, watch mode, server, etc.) — report clearly
     // instead of surfacing a generic kill error. Partial output is included.
-    if (error.killed) {
+    if (error.timedOut) {
       const partial = ((error.stdout || '') + (error.stderr ? '\n' + error.stderr : '')).slice(-4000);
       return {
         content: [{
           type: "text",
           text: `[RTK-Engine] Command timed out after ${timeoutMs}ms and was killed: ${command}\nLikely interactive or long-running (credential prompt, watch mode, dev server). Increase timeoutMs or run it differently.${partial.trim() ? `\n\nPartial output (tail):\n${partial}` : ''}`
+        }],
+        isError: true
+      };
+    }
+
+    if (error.maxBufferExceeded) {
+      return {
+        content: [{
+          type: "text",
+          text: `[RTK-Engine] Command output exceeded the 50MB safety limit and its process tree was killed: ${command}`
+        }],
+        isError: true
+      };
+    }
+
+    if (error.aborted) {
+      return {
+        content: [{
+          type: "text",
+          text: `[RTK-Engine] Command was cancelled and its process tree was killed: ${command}`
         }],
         isError: true
       };

@@ -8,10 +8,10 @@
  */
 
 import { platform, arch, homedir, tmpdir } from 'os';
-import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runProcess } from '../lib/process-runner.js';
 
 const IS_WINDOWS = platform() === 'win32';
 
@@ -22,7 +22,7 @@ function cleanOutput(value) {
     .trim();
 }
 
-function runRaw(command, args = [], options = {}) {
+async function runRaw(command, args = [], options = {}) {
   try {
     let executable = command;
     let finalArgs = args;
@@ -32,19 +32,17 @@ function runRaw(command, args = [], options = {}) {
       finalArgs = ['/d', '/c', command, ...args];
     }
 
-    const result = spawnSync(executable, finalArgs, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: options.timeout || 5000,
-      windowsHide: true
+    const result = await runProcess(executable, finalArgs, {
+      timeoutMs: options.timeout || 5000,
+      signal: options.signal
     });
 
     return {
-      ok: result.status === 0,
+      ok: result.ok,
       status: result.status,
       stdout: cleanOutput(result.stdout),
       stderr: cleanOutput(result.stderr),
-      error: result.error?.message || null
+      error: result.error || null
     };
   } catch (error) {
     return {
@@ -57,12 +55,12 @@ function runRaw(command, args = [], options = {}) {
   }
 }
 
-function resolveWindowsCommand(command) {
+async function resolveWindowsCommand(command, options = {}) {
   if (!IS_WINDOWS || /[\\/]/.test(command) || path.extname(command)) {
     return command;
   }
 
-  const result = runRaw('where.exe', [command]);
+  const result = await runRaw('where.exe', [command], options);
   if (!result.ok) {
     return command;
   }
@@ -84,42 +82,42 @@ function resolveWindowsCommand(command) {
   return candidates[0] || command;
 }
 
-function run(command, args = [], options = {}) {
-  return runRaw(resolveWindowsCommand(command), args, options);
+async function run(command, args = [], options = {}) {
+  return runRaw(await resolveWindowsCommand(command, options), args, options);
 }
 
 function firstLine(text) {
   return cleanOutput(text).split('\n').find(Boolean) || null;
 }
 
-function versionOf(command, args = ['--version']) {
-  const result = run(command, args);
+async function versionOf(command, args = ['--version'], options = {}) {
+  const result = await run(command, args, options);
   if (!result.ok && !result.stdout && !result.stderr) {
     return null;
   }
   return firstLine(result.stdout || result.stderr);
 }
 
-function commandPath(command) {
+async function commandPath(command, options = {}) {
   if (IS_WINDOWS) {
-    const resolved = resolveWindowsCommand(command);
+    const resolved = await resolveWindowsCommand(command, options);
     return resolved === command ? null : resolved;
   }
 
-  const result = run('which', [command]);
+  const result = await run('which', [command], options);
   return result.ok ? firstLine(result.stdout) : null;
 }
 
-function detectOS() {
+async function detectOS(options = {}) {
   const plat = platform();
   if (plat === 'win32') {
-    const ver = run('cmd.exe', ['/d', '/s', '/c', 'ver']);
+    const ver = await run('cmd.exe', ['/d', '/s', '/c', 'ver'], options);
     return { name: 'Windows', version: firstLine(ver.stdout) || 'Unknown' };
   }
   if (plat === 'darwin') {
-    return { name: 'macOS', version: versionOf('sw_vers', ['-productVersion']) || 'Unknown' };
+    return { name: 'macOS', version: await versionOf('sw_vers', ['-productVersion'], options) || 'Unknown' };
   }
-  return { name: 'Linux', version: versionOf('uname', ['-r']) || 'Unknown' };
+  return { name: 'Linux', version: await versionOf('uname', ['-r'], options) || 'Unknown' };
 }
 
 function findGitBash() {
@@ -171,7 +169,7 @@ function parseWslDefault(statusOutput, distros) {
   return distros.find((distro) => distro.default)?.name || null;
 }
 
-function getWslToolchain() {
+async function getWslToolchain(options = {}) {
   const script = [
     'printf "shell=%s\\n" "$SHELL"',
     'printf "bash=%s\\n" "$(command -v bash 2>/dev/null || true)"',
@@ -183,7 +181,7 @@ function getWslToolchain() {
     'printf "gitVersion=%s\\n" "$(git --version 2>/dev/null || true)"'
   ].join('; ');
 
-  const result = run('wsl', ['--exec', 'bash', '-lc', script], { timeout: 10000 });
+  const result = await run('wsl', ['--exec', 'bash', '-lc', script], { ...options, timeout: 10000 });
   const values = {};
   for (const line of result.stdout.split('\n')) {
     const [key, ...rest] = line.split('=');
@@ -208,8 +206,8 @@ function getWslToolchain() {
   };
 }
 
-function detectPlainBashTarget() {
-  const result = run('bash', ['-lc', 'printf "uname=%s\\npwd=%s\\nshell=%s\\n" "$(uname -s)" "$(pwd)" "$SHELL"']);
+async function detectPlainBashTarget(options = {}) {
+  const result = await run('bash', ['-lc', 'printf "uname=%s\\npwd=%s\\nshell=%s\\n" "$(uname -s)" "$(pwd)" "$SHELL"'], options);
   if (!result.ok) {
     return {
       available: false,
@@ -247,7 +245,7 @@ function detectPlainBashTarget() {
   };
 }
 
-function detectGitBash() {
+async function detectGitBash(options = {}) {
   const executable = findGitBash();
   if (!executable) {
     return {
@@ -269,7 +267,7 @@ function detectGitBash() {
     'printf "npmVersion=%s\\n" "$(npm --version 2>/dev/null || true)"',
     'printf "gitVersion=%s\\n" "$(git --version 2>/dev/null || true)"'
   ].join('; ');
-  const result = run(executable, ['-lc', script]);
+  const result = await run(executable, ['-lc', script], options);
   const values = {};
   for (const line of result.stdout.split('\n')) {
     const [key, ...rest] = line.split('=');
@@ -294,18 +292,20 @@ function detectGitBash() {
   };
 }
 
-function detectWsl() {
+async function detectWsl(options = {}) {
   if (!IS_WINDOWS) {
     return null;
   }
 
-  const status = run('wsl', ['--status']);
-  const list = run('wsl', ['--list', '--verbose']);
+  const [status, list] = await Promise.all([
+    run('wsl', ['--status'], options),
+    run('wsl', ['--list', '--verbose'], options)
+  ]);
   const distros = parseWslList(list.stdout);
   const defaultDistribution = parseWslDefault(status.stdout, distros);
   const defaultDistro = distros.find((distro) => distro.name === defaultDistribution) || null;
   const usableDefault = Boolean(defaultDistro && !/^docker-desktop$/i.test(defaultDistro.name));
-  const toolchain = usableDefault ? getWslToolchain() : null;
+  const toolchain = usableDefault ? await getWslToolchain(options) : null;
 
   return {
     installed: status.ok || list.ok,
@@ -323,16 +323,31 @@ function detectWsl() {
   };
 }
 
-function detectNativeToolchain() {
+async function detectNativeToolchain(options = {}) {
+  async function inspect(command, args) {
+    const [commandPathResult, version] = await Promise.all([
+      commandPath(command, options),
+      versionOf(command, args, options)
+    ]);
+    return { path: commandPathResult, version };
+  }
+
+  const [node, npm, git, python] = await Promise.all([
+    inspect('node'),
+    inspect('npm'),
+    inspect('git'),
+    inspect('python', ['--version'])
+  ]);
+
   return {
-    node: { path: commandPath('node'), version: versionOf('node') },
-    npm: { path: commandPath('npm'), version: versionOf('npm') },
-    git: { path: commandPath('git'), version: versionOf('git') },
-    python: { path: commandPath('python'), version: versionOf('python', ['--version']) }
+    node,
+    npm,
+    git,
+    python
   };
 }
 
-function detectPackageManagers(nativeToolchain) {
+async function detectPackageManagers(nativeToolchain, options = {}) {
   const managers = [];
 
   for (const [name, info] of Object.entries(nativeToolchain)) {
@@ -345,27 +360,27 @@ function detectPackageManagers(nativeToolchain) {
     // Resolve the binary first (fast where/which) and only spawn the
     // `--version` probe when it exists — absent managers otherwise cost a
     // full failed-spawn each, adding seconds to the tool on lean systems.
-    const binPath = commandPath(name);
-    const version = binPath ? versionOf(name) : null;
+    const binPath = await commandPath(name, options);
+    const version = binPath ? await versionOf(name, ['--version'], options) : null;
     if (version || binPath) {
       managers.push({ name, type: name.startsWith('pip') || ['poetry', 'conda'].includes(name) ? 'python' : 'node', path: binPath, version });
     }
   }
 
   if (platform() === 'darwin') {
-    const brew = versionOf('brew');
-    if (brew) managers.push({ name: 'brew', type: 'system', path: commandPath('brew'), version: brew });
+    const brew = await versionOf('brew', ['--version'], options);
+    if (brew) managers.push({ name: 'brew', type: 'system', path: await commandPath('brew', options), version: brew });
   }
   if (platform() === 'linux') {
     for (const name of ['apt', 'dnf', 'pacman']) {
-      const version = versionOf(name);
-      if (version) managers.push({ name, type: 'system', path: commandPath(name), version });
+      const version = await versionOf(name, ['--version'], options);
+      if (version) managers.push({ name, type: 'system', path: await commandPath(name, options), version });
     }
   }
   if (IS_WINDOWS) {
     for (const name of ['choco', 'scoop']) {
-      const version = versionOf(name);
-      if (version) managers.push({ name, type: 'system', path: commandPath(name), version });
+      const version = await versionOf(name, ['--version'], options);
+      if (version) managers.push({ name, type: 'system', path: await commandPath(name, options), version });
     }
   }
 
@@ -488,20 +503,27 @@ function getPlatformRules(context) {
   return rules;
 }
 
-export async function detectEnvironmentHandler() {
-  const os = detectOS();
-  const nativeToolchain = detectNativeToolchain();
-  const wsl = detectWsl();
-  const gitBash = IS_WINDOWS ? detectGitBash() : null;
-  const plainBash = IS_WINDOWS ? detectPlainBashTarget() : {
-    available: Boolean(process.env.SHELL),
-    target: platform(),
-    uname: versionOf('uname', ['-s']),
-    pwd: process.cwd(),
-    shell: process.env.SHELL || null,
-    error: null
-  };
-  const packageManagers = detectPackageManagers(nativeToolchain);
+export async function detectEnvironmentHandler(signal) {
+  const options = { signal };
+  const plainBashProbe = IS_WINDOWS
+    ? detectPlainBashTarget(options)
+    : (async () => ({
+      available: Boolean(process.env.SHELL),
+      target: platform(),
+      uname: await versionOf('uname', ['-s'], options),
+      pwd: process.cwd(),
+      shell: process.env.SHELL || null,
+      error: null
+    }))();
+
+  const [os, nativeToolchain, wsl, gitBash, plainBash] = await Promise.all([
+    detectOS(options),
+    detectNativeToolchain(options),
+    detectWsl(options),
+    IS_WINDOWS ? detectGitBash(options) : null,
+    plainBashProbe
+  ]);
+  const packageManagers = await detectPackageManagers(nativeToolchain, options);
   const recommendation = chooseRecommendation({ wsl, gitBash, nativeToolchain });
   const context = { wsl, gitBash, plainBash };
   const rules = getPlatformRules(context);
@@ -588,8 +610,8 @@ function formatCompact(result) {
   return lines.join('\n');
 }
 
-export async function handleDetectEnvironment(args) {
-  const result = await detectEnvironmentHandler();
+export async function handleDetectEnvironment(args, signal) {
+  const result = await detectEnvironmentHandler(signal);
   const compact = args?.compact === true; // default: false
 
   if (compact) {

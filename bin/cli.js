@@ -16,7 +16,6 @@
  *   anti-hallucination --version | --help
  */
 
-import { spawn } from 'child_process';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
@@ -27,6 +26,7 @@ import { handleFileSkeleton } from '../src/mcp-server/tools/get-file-skeleton.js
 import { handleGetProjectOverview } from '../src/mcp-server/tools/get-project-overview.js';
 import { handleHallucinationReport } from '../src/mcp-server/tools/get-hallucination-report.js';
 import { handleGenAgentsContext } from '../src/mcp-server/tools/gen-agents-context.js';
+import { runProcess } from '../src/mcp-server/lib/process-runner.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -106,10 +106,14 @@ async function main() {
     case 'setup': {
       // setup.js is a standalone script; run it as a child so its top-level
       // logic executes with the user's chosen --project, HOME, etc.
-      await new Promise((res) => {
-        const child = spawn(process.execPath, [join(ROOT, 'scripts', 'setup.js'), ...argv], { stdio: 'inherit' });
-        child.on('exit', (code) => { process.exitCode = code || 0; res(); });
+      const result = await runProcess(process.execPath, [join(ROOT, 'scripts', 'setup.js'), ...argv], {
+        stdio: 'inherit',
+        timeoutMs: 0
       });
+      if (result.error && result.status === null) {
+        throw new Error(`Could not start setup: ${result.error}`);
+      }
+      process.exitCode = result.status || 0;
       return;
     }
     default:

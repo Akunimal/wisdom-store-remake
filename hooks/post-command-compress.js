@@ -6,8 +6,8 @@
  * before they reach the LLM context window.
  */
 
-import { spawnSync } from 'child_process';
 import { compressOutput } from '../src/mcp-server/tools/token-compressor.js';
+import { runShellCommand } from '../src/mcp-server/lib/process-runner.js';
 
 // The hook script takes the command as arguments
 const command = process.argv.slice(2).join(' ');
@@ -21,26 +21,24 @@ if (!command) {
 // commands (credential prompts, watch mode) cannot freeze the hook forever.
 const TIMEOUT_MS = parseInt(process.env.RTK_COMMAND_TIMEOUT_MS, 10) || 120000;
 
-// spawnSync (not execSync) so stderr is captured on *success* too. execSync
-// returns only stdout, silently dropping warnings/deprecations from tools that
-// write them to stderr while still exiting 0 (tsc, eslint, git, npm).
-const result = spawnSync(command, {
-  shell: true,
-  encoding: 'utf-8',
+const result = await runShellCommand(command, {
   maxBuffer: 1024 * 1024 * 50,
-  timeout: TIMEOUT_MS,
-  killSignal: 'SIGKILL'
+  timeoutMs: TIMEOUT_MS
 });
 
-// Timed out — spawnSync sets error.code ETIMEDOUT (and signals the kill).
-if (result.error && (result.error.code === 'ETIMEDOUT' || result.signal === 'SIGKILL')) {
+if (result.timedOut) {
   console.error(`[RTK-Engine] Command timed out after ${TIMEOUT_MS}ms and was killed: ${command}`);
   process.exit(124);
 }
 
-// Could not even start the command (binary not found, spawn failure).
+if (result.maxBufferExceeded) {
+  console.error(`[RTK-Engine] Command output exceeded the 50MB safety limit and was killed: ${command}`);
+  process.exit(1);
+}
+
+// Could not even start the command.
 if (result.error && result.status === null) {
-  console.error(`Failed to execute: ${result.error.message}`);
+  console.error(`Failed to execute: ${result.error}`);
   process.exit(1);
 }
 
