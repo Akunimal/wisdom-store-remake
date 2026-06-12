@@ -17,7 +17,7 @@ import {
 import { scanProject, writeSymbols } from '../lib/indexer.js';
 import { createProjectWatcher } from '../lib/watcher.js';
 
-// projectRoot -> { watcher, since, rescans }
+// projectRoot -> { watcher, since, rescans, failures, lastError }
 const activeWatchers = new Map();
 
 function rescan(projectRoot, wisdomDir) {
@@ -59,7 +59,8 @@ export const watchProjectDefinition = {
       debounce_ms: {
         type: 'integer',
         description: 'Milliseconds to coalesce rapid changes before rescanning. Default: 600.',
-        default: 600
+        default: 600,
+        minimum: 0
       }
     },
     required: []
@@ -68,6 +69,11 @@ export const watchProjectDefinition = {
 
 function text(message) {
   return { content: [{ type: 'text', text: message }] };
+}
+
+function statusSuffix(entry) {
+  if (!entry.failures) return '';
+  return `, ${entry.failures} failed${entry.lastError ? ` (last: ${entry.lastError})` : ''}`;
 }
 
 export async function handleWatchProject(args = {}) {
@@ -79,25 +85,52 @@ export async function handleWatchProject(args = {}) {
     if (!entry) return text(`No active watcher for ${projectRoot}.`);
     entry.watcher.close();
     activeWatchers.delete(projectRoot);
-    return text(`Stopped watching ${projectRoot} (${entry.rescans} incremental rescans this session).`);
+    return text(`Stopped watching ${projectRoot} (${entry.rescans} successful incremental rescans${statusSuffix(entry)}).`);
   }
 
   if (activeWatchers.has(projectRoot)) {
     const entry = activeWatchers.get(projectRoot);
-    return text(`Already watching ${projectRoot} (${entry.watcher.watchedDirs} dirs, ${entry.rescans} rescans). Pass enable:false to stop.`);
+    return text(`Already watching ${projectRoot} (${entry.watcher.watchedDirs} dirs, ${entry.rescans} successful rescans${statusSuffix(entry)}). Pass enable:false to stop.`);
   }
 
   const wisdomDir = getWisdomDir(projectRoot, true);
-  const entry = { watcher: null, since: new Date().toISOString(), rescans: 0 };
+  const entry = { watcher: null, since: new Date().toISOString(), rescans: 0, failures: 0, lastError: null };
   entry.watcher = createProjectWatcher(
     projectRoot,
-    () => { entry.rescans++; try { rescan(projectRoot, wisdomDir); } catch { /* non-fatal */ } },
-    { debounceMs: args.debounce_ms || 600 }
+    () => {
+      try {
+        rescan(projectRoot, wisdomDir);
+        entry.rescans++;
+        entry.lastError = null;
+      } catch (error) {
+        entry.failures++;
+        entry.lastError = error.message;
+      }
+    },
+    {
+      debounceMs: Number.isInteger(args.debounce_ms) && args.debounce_ms >= 0 ? args.debounce_ms : 600,
+      onError: (error) => {
+        entry.failures++;
+        entry.lastError = error.message;
+      }
+    }
   );
+
+  if (entry.watcher.watchedDirs === 0) {
+    entry.watcher.close();
+    throw new Error(`Unable to watch ${projectRoot}${entry.lastError ? `: ${entry.lastError}` : ''}`);
+  }
   activeWatchers.set(projectRoot, entry);
 
   // Establish a fresh baseline immediately.
-  const fileCount = rescan(projectRoot, wisdomDir);
+  let fileCount;
+  try {
+    fileCount = rescan(projectRoot, wisdomDir);
+  } catch (error) {
+    entry.watcher.close();
+    activeWatchers.delete(projectRoot);
+    throw error;
+  }
 
   return text(`Watching ${projectRoot} — ${entry.watcher.watchedDirs} dirs, baseline ${fileCount} files indexed. The registry now auto-updates on every change; refresh_symbols is no longer needed for this project.`);
 }

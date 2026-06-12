@@ -68,6 +68,30 @@ function createHangingTree() {
   };
 }
 
+function createPipeHoldingOrphan() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsr-pipe-orphan-'));
+  const pidFile = path.join(dir, 'child.pid');
+  const childFile = path.join(dir, 'child.mjs');
+  const parentFile = path.join(dir, 'parent.mjs');
+
+  fs.writeFileSync(childFile, [
+    "import fs from 'node:fs';",
+    "fs.writeFileSync(process.argv[2], String(process.pid));",
+    'setInterval(() => {}, 1000);'
+  ].join('\n'));
+  fs.writeFileSync(parentFile, [
+    "import fs from 'node:fs';",
+    "import { spawn } from 'node:child_process';",
+    "const child = spawn(process.execPath, [process.argv[2], process.argv[3]], { stdio: 'inherit', detached: process.platform === 'win32' });",
+    'child.unref();',
+    'const timer = setInterval(() => {',
+    '  if (fs.existsSync(process.argv[3])) { clearInterval(timer); process.exit(0); }',
+    '}, 10);'
+  ].join('\n'));
+
+  return { parentFile, childFile, pidFile };
+}
+
 test('runShellCommand kills the complete process tree on timeout', { timeout: 10000 }, async () => {
   const { command, pidFile } = createHangingTree();
   let grandchildPid = null;
@@ -80,6 +104,76 @@ test('runShellCommand kills the complete process tree on timeout', { timeout: 10
     assert.equal(activeProcessCount(), 0);
   } finally {
     if (grandchildPid && isAlive(grandchildPid)) terminateProcessTree(grandchildPid);
+  }
+});
+
+test('runProcess kills pipe-holding descendants after their parent exits', { timeout: 10000 }, async () => {
+  const { parentFile, childFile, pidFile } = createPipeHoldingOrphan();
+  const pending = runProcess(process.execPath, [parentFile, childFile, pidFile], { timeoutMs: 800 });
+  let descendantPid = null;
+  let outcome;
+
+  try {
+    assert.ok(await waitFor(() => fs.existsSync(pidFile), 3000), 'descendant did not start');
+    descendantPid = Number(fs.readFileSync(pidFile, 'utf8'));
+    outcome = await Promise.race([
+      pending,
+      sleep(4000).then(() => null)
+    ]);
+
+    assert.ok(outcome, 'runner remained stuck after its timeout');
+    assert.equal(outcome.timedOut, true);
+    assert.equal(await waitFor(() => !isAlive(descendantPid)), true);
+  } finally {
+    if (descendantPid && isAlive(descendantPid)) terminateProcessTree(descendantPid);
+    await pending;
+  }
+});
+
+test('terminateProcessTree kills every orphaned Windows descendant branch', {
+  timeout: 10000,
+  skip: process.platform !== 'win32'
+}, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsr-orphan-branches-'));
+  const childFile = path.join(dir, 'child.mjs');
+  const parentFile = path.join(dir, 'parent.mjs');
+  const pidFiles = [path.join(dir, 'one.pid'), path.join(dir, 'two.pid')];
+  fs.writeFileSync(childFile, [
+    "import fs from 'node:fs';",
+    "fs.writeFileSync(process.argv[2], String(process.pid));",
+    'setInterval(() => {}, 1000);'
+  ].join('\n'));
+  fs.writeFileSync(parentFile, [
+    "import fs from 'node:fs';",
+    "import { spawn } from 'node:child_process';",
+    'for (const pidFile of process.argv.slice(3)) {',
+    "  const child = spawn(process.execPath, [process.argv[2], pidFile], { stdio: 'ignore', detached: true });",
+    '  child.unref();',
+    '}',
+    'const timer = setInterval(() => {',
+    '  if (process.argv.slice(3).every((file) => fs.existsSync(file))) { clearInterval(timer); process.exit(0); }',
+    '}, 10);'
+  ].join('\n'));
+
+  const parent = spawn(process.execPath, [parentFile, childFile, ...pidFiles], {
+    stdio: 'ignore',
+    windowsHide: true
+  });
+  let pids = [];
+  try {
+    assert.ok(await waitFor(() => pidFiles.every((file) => fs.existsSync(file)), 3000));
+    pids = pidFiles.map((file) => Number(fs.readFileSync(file, 'utf8')));
+    if (parent.exitCode === null) {
+      await new Promise((resolve) => parent.once('exit', resolve));
+    }
+    assert.ok(pids.every(isAlive), 'descendants should be alive before cleanup');
+
+    terminateProcessTree(parent);
+    assert.equal(await waitFor(() => pids.every((pid) => !isAlive(pid))), true);
+  } finally {
+    for (const pid of pids) {
+      if (isAlive(pid)) terminateProcessTree(pid);
+    }
   }
 });
 

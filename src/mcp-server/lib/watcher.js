@@ -30,11 +30,12 @@ const MAX_WATCH_DEPTH = 12;
  * @param {string} projectRoot
  * @param {(changedFiles: string[]) => void} onChange - called (debounced) with
  *   absolute paths of code files that changed since the last flush.
- * @param {{ debounceMs?: number }} [options]
+ * @param {{ debounceMs?: number, onError?: (error: Error) => void }} [options]
  * @returns {{ close: () => void, watchedDirs: number }}
  */
 export function createProjectWatcher(projectRoot, onChange, options = {}) {
   const debounceMs = options.debounceMs ?? 600;
+  const onError = options.onError || (() => {});
   const watchers = new Map(); // dir -> FSWatcher
   const pending = new Set();
   let timer = null;
@@ -52,7 +53,16 @@ export function createProjectWatcher(projectRoot, onChange, options = {}) {
     if (closed) return;
     const files = [...pending];
     pending.clear();
-    try { onChange(files); } catch { /* rescan errors are non-fatal */ }
+    try { onChange(files); } catch (error) { onError(error); }
+  }
+
+  function unwatchTree(dir) {
+    const prefix = dir + path.sep;
+    for (const [watchedDir, watcher] of watchers) {
+      if (watchedDir !== dir && !watchedDir.startsWith(prefix)) continue;
+      watchers.delete(watchedDir);
+      try { watcher.close(); } catch { /* best-effort */ }
+    }
   }
 
   function watchDir(dir) {
@@ -66,6 +76,10 @@ export function createProjectWatcher(projectRoot, onChange, options = {}) {
         let stat = null;
         try { stat = fs.statSync(full); } catch { /* deleted/renamed */ }
 
+        if (!stat) {
+          unwatchTree(full);
+        }
+
         if (stat && stat.isDirectory()) {
           if (!WATCH_SKIP.has(filename) && !filename.startsWith('.')) {
             walkAndWatch(full, depthOf(dir) + 1);
@@ -77,10 +91,14 @@ export function createProjectWatcher(projectRoot, onChange, options = {}) {
           schedule(full);
         }
       });
-    } catch {
+    } catch (error) {
+      onError(error);
       return; // directory vanished or permission denied — skip it
     }
-    w.on('error', () => { /* best-effort */ });
+    w.on('error', (error) => {
+      unwatchTree(dir);
+      onError(error);
+    });
     watchers.set(dir, w);
   }
 

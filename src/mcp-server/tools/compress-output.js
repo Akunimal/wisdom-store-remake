@@ -38,7 +38,8 @@ export const compressOutputDefinition = {
       timeoutMs: {
         type: "number",
         description: "Maximum milliseconds the command may run before being killed. Default: 120000 (2 minutes). Prevents interactive or long-running commands (watch mode, servers, credential prompts) from hanging the tool call forever.",
-        default: 120000
+        default: 120000,
+        minimum: 1
       }
     },
     required: ["command"]
@@ -46,7 +47,8 @@ export const compressOutputDefinition = {
 };
 
 export async function compressOutputHandler(args, signal) {
-  const { command, level = 'normal', maxTokens = 500, redact = true, timeoutMs = 120000 } = args;
+  const { command, level = 'normal', maxTokens = 500, redact = true } = args;
+  const timeoutMs = Number.isFinite(args.timeoutMs) && args.timeoutMs > 0 ? args.timeoutMs : 120000;
 
   if (!command) {
     throw new Error('Command is required');

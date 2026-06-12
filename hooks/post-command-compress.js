@@ -19,7 +19,8 @@ if (!command) {
 
 // Allow override via env; default 2 minutes so interactive or never-ending
 // commands (credential prompts, watch mode) cannot freeze the hook forever.
-const TIMEOUT_MS = parseInt(process.env.RTK_COMMAND_TIMEOUT_MS, 10) || 120000;
+const configuredTimeout = Number.parseInt(process.env.RTK_COMMAND_TIMEOUT_MS, 10);
+const TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 120000;
 
 const result = await runShellCommand(command, {
   maxBuffer: 1024 * 1024 * 50,

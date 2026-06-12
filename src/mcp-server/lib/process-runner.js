@@ -12,21 +12,111 @@ function installExitHook() {
   process.once('exit', terminateAllProcessTrees);
 }
 
+function getWindowsProcessSnapshot() {
+  const wmic = spawnSync('wmic.exe', [
+    'process',
+    'get',
+    'ProcessId,ParentProcessId',
+    '/format:csv'
+  ], {
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true
+  });
+
+  let processes = [];
+  if (wmic.status === 0 && wmic.stdout?.trim()) {
+    processes = wmic.stdout.split(/\r?\n/).flatMap((line) => {
+      const fields = line.replace(/\r/g, '').trim().split(',');
+      const parentPid = Number(fields.at(-2));
+      const pid = Number(fields.at(-1));
+      return Number.isInteger(pid) && Number.isInteger(parentPid)
+        ? [{ ProcessId: pid, ParentProcessId: parentPid }]
+        : [];
+    });
+  }
+
+  if (processes.length === 0) {
+    const script = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress';
+    const result = spawnSync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-WindowStyle',
+      'Hidden',
+      '-Command',
+      script
+    ], {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true
+    });
+
+    if (result.status === 0 && result.stdout?.trim()) {
+      try {
+        const parsed = JSON.parse(result.stdout);
+        processes = Array.isArray(parsed) ? parsed : [parsed];
+      } catch { /* no usable process snapshot */ }
+    }
+  }
+
+  return processes;
+}
+
+function getWindowsDescendantPids(rootPid) {
+  const processes = getWindowsProcessSnapshot();
+  const descendants = new Set();
+
+  function collect() {
+    let found = true;
+    while (found) {
+      found = false;
+      for (const entry of processes) {
+        const pid = Number(entry.ProcessId);
+        const parentPid = Number(entry.ParentProcessId);
+        if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid || descendants.has(pid)) continue;
+        if (parentPid === rootPid || descendants.has(parentPid)) {
+          descendants.add(pid);
+          found = true;
+        }
+      }
+    }
+  }
+
+  collect();
+  return [...descendants];
+}
+
 export function terminateProcessTree(childOrPid) {
   const pid = typeof childOrPid === 'number' ? childOrPid : childOrPid?.pid;
   if (!Number.isInteger(pid) || pid <= 0) return false;
 
   if (IS_WINDOWS) {
-    const result = spawnSync('taskkill.exe', ['/pid', String(pid), '/t', '/f'], {
-      stdio: 'ignore',
-      timeout: 5000,
-      windowsHide: true
-    });
+    const rootMayStillExist = typeof childOrPid === 'number'
+      || (childOrPid.exitCode === null && childOrPid.signalCode === null);
 
-    if (typeof childOrPid?.kill === 'function') {
+    function taskkill(targetPid) {
+      const result = spawnSync('taskkill.exe', ['/pid', String(targetPid), '/t', '/f'], {
+        stdio: 'ignore',
+        timeout: 5000,
+        windowsHide: true
+      });
+      return result.status === 0;
+    }
+
+    // Fast path while the root still exists. If it already exited, taskkill /T
+    // cannot discover descendants, even though they retain the dead parent PID.
+    let killed = rootMayStillExist && taskkill(pid);
+    if (rootMayStillExist && typeof childOrPid?.kill === 'function') {
       try { childOrPid.kill('SIGKILL'); } catch { /* already gone */ }
     }
-    return result.status === 0;
+
+    if (!killed) {
+      for (const descendantPid of getWindowsDescendantPids(pid)) {
+        const killedBranch = taskkill(descendantPid);
+        killed = killedBranch || killed;
+      }
+    }
+    return killed;
   }
 
   try {
@@ -44,7 +134,6 @@ export function terminateProcessTree(childOrPid) {
 
 export function terminateAllProcessTrees() {
   const children = [...activeChildren];
-  activeChildren.clear();
   for (const child of children) {
     terminateProcessTree(child);
   }
@@ -57,13 +146,19 @@ export function activeProcessCount() {
 
 export function runProcess(command, args = [], options = {}) {
   const {
-    timeoutMs = 120000,
-    maxBuffer = DEFAULT_MAX_BUFFER,
+    timeoutMs: requestedTimeoutMs = 120000,
+    maxBuffer: requestedMaxBuffer = DEFAULT_MAX_BUFFER,
     shell = false,
     stdio = ['ignore', 'pipe', 'pipe'],
     signal,
     ...spawnOptions
   } = options;
+  const timeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs >= 0
+    ? requestedTimeoutMs
+    : 120000;
+  const maxBuffer = Number.isFinite(requestedMaxBuffer) && requestedMaxBuffer >= 0
+    ? requestedMaxBuffer
+    : DEFAULT_MAX_BUFFER;
 
   if (signal?.aborted) {
     return Promise.resolve({
@@ -133,6 +228,11 @@ export function runProcess(command, args = [], options = {}) {
       if (stopReason) return;
       stopReason = reason;
       terminateProcessTree(child);
+      // A detached descendant can keep inherited pipe handles open after the
+      // direct child exits. Closing our ends guarantees `close` can settle.
+      child.stdin?.destroy();
+      child.stdout?.destroy();
+      child.stderr?.destroy();
     }
 
     function onAbort() {
